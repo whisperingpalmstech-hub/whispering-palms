@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { getDictionaryLanguages, LONG_TAIL_LANGUAGES } from '@/lib/i18n/registry'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import CountryInput from '@/app/components/CountryInput'
@@ -52,6 +53,8 @@ export default function SettingsPage() {
     time_of_birth: '',
     place_of_birth: '',
     birth_timezone: '',
+    voice_gender: '',
+    voice_speaking_rate: '',
   })
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info'; isVisible: boolean }>({
     message: '',
@@ -97,6 +100,11 @@ export default function SettingsPage() {
           time_of_birth: formattedTime,
           place_of_birth: profileResult.data.profile.place_of_birth || '',
           birth_timezone: profileResult.data.profile.birth_timezone || '',
+          voice_gender: profileResult.data.profile.voice_gender || '',
+          voice_speaking_rate:
+            profileResult.data.profile.voice_speaking_rate != null
+              ? String(profileResult.data.profile.voice_speaking_rate)
+              : '',
         }))
       }
 
@@ -128,6 +136,10 @@ export default function SettingsPage() {
           time_of_birth: formData.time_of_birth,
           place_of_birth: formData.place_of_birth,
           birth_timezone: formData.birth_timezone,
+          voice_gender: formData.voice_gender || null,
+          voice_speaking_rate: formData.voice_speaking_rate
+            ? Number(formData.voice_speaking_rate)
+            : null,
         }),
       })
 
@@ -216,19 +228,75 @@ export default function SettingsPage() {
                   onChange={(e) => setFormData({ ...formData, preferred_language: e.target.value })}
                   className="w-full px-4 py-3 bg-white border border-beige-300 rounded-xl text-text-primary focus:outline-none focus:ring-2 focus:ring-gold-400 focus:border-gold-400 transition-all"
                 >
-                  <option value="en">English</option>
-                  <option value="hi">Hindi</option>
-                  <option value="es">Spanish</option>
-                  <option value="fr">French</option>
-                  <option value="de">German</option>
-                  <option value="it">Italian</option>
-                  <option value="pt">Portuguese</option>
-                  <option value="ru">Russian</option>
-                  <option value="ja">Japanese</option>
-                  <option value="ko">Korean</option>
-                  <option value="zh">Chinese</option>
-                  <option value="ar">Arabic</option>
+                  {/* Languages with a reviewed interface translation. */}
+                  <optgroup label="Full experience">
+                    {getDictionaryLanguages().map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.nativeName} — {lang.name}
+                        {lang.tts ? '' : ' (no audio)'}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {/* Readings are translated; the interface stays in English. */}
+                  <optgroup label="Readings translated, interface in English">
+                    {LONG_TAIL_LANGUAGES.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.nativeName} — {lang.name}
+                        {lang.tts ? '' : ' (no audio)'}
+                      </option>
+                    ))}
+                  </optgroup>
                 </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="voice-gender"
+                  className="block text-text-primary font-medium mb-2 text-sm"
+                >
+                  Narration voice
+                </label>
+                <select
+                  id="voice-gender"
+                  value={formData.voice_gender}
+                  onChange={(e) => setFormData({ ...formData, voice_gender: e.target.value })}
+                  className="w-full px-4 py-3 bg-white border border-beige-300 rounded-xl text-text-primary focus:outline-none focus:ring-2 focus:ring-gold-400 focus:border-gold-400 transition-all"
+                >
+                  <option value="">Use the default voice</option>
+                  <option value="FEMALE">Female</option>
+                  <option value="MALE">Male</option>
+                  <option value="NEUTRAL">Neutral</option>
+                </select>
+                <p className="text-xs text-text-tertiary mt-1">
+                  Applies to spoken readings on the Flame and SuperFlame plans.
+                </p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="voice-rate"
+                  className="block text-text-primary font-medium mb-2 text-sm"
+                >
+                  Speaking speed
+                  {formData.voice_speaking_rate && ` — ${formData.voice_speaking_rate}×`}
+                </label>
+                <input
+                  id="voice-rate"
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value={formData.voice_speaking_rate || '1'}
+                  onChange={(e) =>
+                    setFormData({ ...formData, voice_speaking_rate: e.target.value })
+                  }
+                  className="w-full accent-gold-500"
+                />
+                <div className="flex justify-between text-xs text-text-tertiary">
+                  <span>Slower</span>
+                  <span>Normal</span>
+                  <span>Faster</span>
+                </div>
               </div>
             </div>
           </div>

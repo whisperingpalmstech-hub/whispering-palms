@@ -133,12 +133,10 @@ export class RazorpayProvider implements PaymentProviderInterface {
   }
 
   async cancelSubscription(subscriptionId: string, reason?: string): Promise<Subscription> {
-    const subscription = await this.razorpay.subscriptions.cancel(subscriptionId, {
-      cancel_at_cycle_end: true,
-      notes: {
-        cancellation_reason: reason || 'user_requested',
-      },
-    })
+    // The SDK types this second parameter as boolean | number: true cancels
+    // at the end of the current billing cycle. The reason is recorded in our
+    // own transactions metadata instead of Razorpay notes.
+    const subscription = await this.razorpay.subscriptions.cancel(subscriptionId, true)
 
     return this.mapRazorpaySubscription(subscription)
   }

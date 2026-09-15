@@ -3,6 +3,9 @@
  * Handles workspace creation, document management, and RAG retrieval
  */
 
+import { buildAstrologerPrompt } from '@/lib/prompts/astrologer-persona'
+import { getPromptText, PROMPT_NAMES } from '@/lib/services/prompts'
+
 import FormDataNode from 'form-data'
 import axios from 'axios'
 
@@ -514,6 +517,9 @@ class AnythingLLMService {
       throw new Error(`Invalid workspace ID: ${workspaceId}. Workspace needs to be recreated.`)
     }
 
+    // Resolved once so the retry path below sends the same prompt.
+    const resolvedSystemPrompt = systemPrompt || (await this.getDefaultSystemPrompt())
+
     // Parse workspace ID - might be in format "id:slug" or just "id"
     let numericId = workspaceId
     let workspaceSlug: string | null = null
@@ -571,7 +577,7 @@ class AnythingLLMService {
         headers: headers,
         body: JSON.stringify({
           message,
-          systemPrompt: systemPrompt || this.getDefaultSystemPrompt(),
+          systemPrompt: resolvedSystemPrompt,
           history: history || [],
           mode: 'chat', // Use chat mode (no RAG) - context is injected via system prompt
         }),
@@ -594,7 +600,7 @@ class AnythingLLMService {
             headers: headers,
             body: JSON.stringify({
               message,
-              systemPrompt: systemPrompt || this.getDefaultSystemPrompt(),
+              systemPrompt: resolvedSystemPrompt,
               history: history || [],
               mode: 'chat',
             }),
@@ -685,19 +691,19 @@ class AnythingLLMService {
   }
 
   /**
-   * Get default system prompt for Aarav Dev persona
+   * Default system prompt for the Aarav Dev persona.
+   *
+   * Reads the active version from the `prompts` table, falling back to
+   * lib/prompts/astrologer-persona.ts. This used to be an eight-line summary
+   * defined here, which meant every reading was generated from a far weaker
+   * prompt than the detailed one that existed in lib/services/llm-service.ts.
    */
-  private getDefaultSystemPrompt(): string {
-    return `You are Aarav Dev, a wise and compassionate astrologer and palmistry expert. You provide guidance based on Vedic astrology, palmistry, and spiritual wisdom. 
-
-Your responses should be:
-- Warm, empathetic, and encouraging
-- Based on the user's birth chart and palm reading insights
-- Practical and actionable
-- Respectful of free will and personal choice
-- Never making absolute predictions or guarantees
-
-Always consider the user's context profile (birth details, palm analysis) when providing guidance.`
+  private async getDefaultSystemPrompt(): Promise<string> {
+    const { content } = await getPromptText(
+      PROMPT_NAMES.ASTROLOGER_PERSONA,
+      buildAstrologerPrompt()
+    )
+    return content
   }
 
   /**

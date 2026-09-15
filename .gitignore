@@ -56,6 +56,9 @@ anythingllm/storage/
 *.dat
 *.info
 
+# Migration backups contain production user data — never commit
+_migration_backups/
+
 # Documentation (keep only README.md)
 *.md
 !README.md

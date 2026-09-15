@@ -249,6 +249,8 @@ export default {
   // Subscription Plans - German
   'plan.basic': 'Basis',
   'plan.basicDesc': 'Perfekt für den Einstieg in astrologische Einblicke',
+  'plan.free': 'Kostenlos',
+  'plan.freeDesc': 'Testen Sie es mit 2 Fragen pro Tag',
   'plan.spark': 'Funke',
   'plan.sparkDesc': 'Verbesserte Erfahrung mit schnelleren Antworten',
   'plan.flame': 'Flamme',
@@ -287,4 +289,10 @@ export default {
   // Common extras
   'common.readMore': 'Mehr lesen',
   'common.showLess': 'Weniger anzeigen',
+
+  // Added to match en.ts
+  'palm.uploadTipsTitle': 'Upload-Tipps für Beste Ergebnisse',
+  'palm.tipContent': 'Legen Sie Ihre Hand auf eine flache Oberfläche mit guter Beleuchtung. Halten Sie Ihre Handfläche offen mit natürlich gespreizten Fingern. Stellen Sie sicher, dass alle Hauptlinien (Lebenslinie, Herzlinie, Kopflinie) auf dem Foto klar sichtbar sind.',
+  'chat.typeYourQuestion': 'Geben Sie hier Ihre Frage ein...',
+  'chat.answerDeliveryNote': 'Ihre Antwort wird je nach Abonnement per E-Mail zugestellt.',
 } as const

@@ -1,7 +1,6 @@
 'use client'
 
-import { createClient } from '@/lib/supabase/client'
-import { notFound } from 'next/navigation'
+import { notFound, useRouter } from 'next/navigation'
 import { useEffect, useState, useRef, use } from 'react'
 
 interface PlaybackPageProps {
@@ -20,6 +19,7 @@ interface PlaybackPageProps {
  */
 export default function PlaybackPage({ params }: PlaybackPageProps) {
     const { id } = use(params)
+    const router = useRouter()
     const [loading, setLoading] = useState(true)
     const [answer, setAnswer] = useState<any>(null)
     const [showOverlay, setShowOverlay] = useState(false)
@@ -30,23 +30,30 @@ export default function PlaybackPage({ params }: PlaybackPageProps) {
 
     useEffect(() => {
         async function fetchData() {
-            const supabase = createClient()
-            const { data, error } = await supabase
-                .from('answers')
-                .select(`id, text, email_metadata`)
-                .eq('id', id)
-                .single()
-
-            if (error || !data) {
+            // Ownership and auth are checked server-side by /api/playback/[id].
+            // A 401 means the email link was opened without a session — send
+            // the user through login and back here afterwards.
+            const response = await fetch(`/api/playback/${id}`)
+            if (response.status === 401) {
+                router.push(`/login?redirect=/playback/${id}`)
+                return
+            }
+            if (!response.ok) {
                 setLoading(false)
                 return
             }
-
-            setAnswer(data)
+            const result = await response.json()
+            const fetched = result.data?.answer ?? null
+            setAnswer(fetched)
+            // Readings without narration have no audio element to start the
+            // transcript — show the text immediately instead of hanging.
+            if (fetched && !fetched.audioUrl) {
+                setAudioStarted(true)
+            }
             setLoading(false)
         }
         fetchData()
-    }, [id])
+    }, [id, router])
 
     // Live Transcription Logic (Typewriter effect sync)
     useEffect(() => {
@@ -101,10 +108,12 @@ export default function PlaybackPage({ params }: PlaybackPageProps) {
     if (loading) return null
     if (!answer) return notFound()
 
-    const audioUrl = answer.email_metadata?.audio_url
-    const fullAudioUrl = audioUrl?.startsWith('http')
-        ? audioUrl
-        : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${audioUrl}`
+    const audioUrl = answer.audioUrl
+    const fullAudioUrl = !audioUrl
+        ? null
+        : audioUrl.startsWith('http')
+            ? audioUrl
+            : `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}${audioUrl}`
 
     const videoUrl = process.env.NEXT_PUBLIC_ASTROLOGER_VIDEO_URL || "/videos/avatar.mp4"
 

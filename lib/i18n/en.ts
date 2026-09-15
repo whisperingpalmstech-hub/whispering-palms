@@ -253,6 +253,8 @@ export default {
   // Subscription Plans
   'plan.basic': 'Basic',
   'plan.basicDesc': 'Perfect for getting started with astrology insights',
+  'plan.free': 'Free',
+  'plan.freeDesc': 'Try it out with 2 questions a day',
   'plan.spark': 'Spark',
   'plan.sparkDesc': 'Enhanced experience with faster responses',
   'plan.flame': 'Flame',

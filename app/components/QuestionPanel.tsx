@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import VoiceQuestionInput from '@/app/components/VoiceQuestionInput'
 import Toast from './Toast'
 import { useI18n } from '@/app/hooks/useI18n'
 
@@ -169,8 +170,10 @@ export default function QuestionPanel() {
 
       if (!answerResponse.ok) {
         if (answerResponse.status === 503) {
+          // Nothing retries a failed question, so do not promise an email.
           showToast(
-            'Service is temporarily unavailable. Your question has been saved and will be answered via email.',
+            answerResult.error?.message ||
+              'The reading service is temporarily unavailable. Your question was not charged - please try again shortly.',
             'warning'
           )
         } else {
@@ -397,6 +400,24 @@ export default function QuestionPanel() {
               />
               <div className="absolute bottom-2 sm:bottom-3 right-3 sm:right-4 text-[10px] sm:text-xs md:text-sm text-text-tertiary bg-white/90 px-1.5 py-0.5 rounded font-medium">
                 {input.length}/1000
+              </div>
+
+              {/*
+                Speaking appends to whatever is already typed rather than
+                replacing it, so a second recording adds to the question instead
+                of wiping the first. Renders nothing when transcription is
+                unavailable.
+              */}
+              <div className="mt-2">
+                <VoiceQuestionInput
+                  disabled={submitting || !!(quota && quota.max !== -1 && quota.remaining === 0)}
+                  onTranscript={(text) =>
+                    setInput((current) => {
+                      const combined = current.trim() ? `${current.trim()} ${text}` : text
+                      return combined.slice(0, 1000)
+                    })
+                  }
+                />
               </div>
             </div>
             <button

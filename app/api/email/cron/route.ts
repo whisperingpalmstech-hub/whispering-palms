@@ -1,123 +1,63 @@
 /**
  * GET /api/email/cron
- * Cron job endpoint to check and send pending emails
- * Should be called every minute by an external cron service (e.g., Vercel Cron, GitHub Actions, etc.)
- * 
- * For local development, you can call this manually or set up a simple cron job
+ *
+ * Delivers reading emails whose scheduled time has arrived. Called every minute
+ * by an external cron service.
+ *
+ * Three things were wrong here before:
+ *
+ *  1. No authentication. Anyone could call it repeatedly and flush every
+ *     pending reading. Now requires CRON_SECRET.
+ *  2. It carried its own copy of the Resend/Zoho/Gmail sending code and was
+ *     missed when the app moved to lib/services/mailer. With the relay switched
+ *     to ZeptoMail it would have failed on every send. Now uses the shared
+ *     mailer.
+ *  3. It read the database with the anon client and no session. Once Row Level
+ *     Security is enabled that returns zero rows, so no reading would ever be
+ *     delivered. Now uses the service role, which is correct for a machine job
+ *     that legitimately crosses user boundaries.
  */
 
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { NextRequest } from 'next/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createErrorResponse, createSuccessResponse } from '@/lib/utils/response'
 import { generateAnswerEmail } from '@/lib/services/email'
-import { Resend } from 'resend'
-import nodemailer from 'nodemailer'
+import { getMailerStatus, sendMail } from '@/lib/services/mailer'
+import { requireCronAuth } from '@/lib/auth/cron'
 
-type EmailProvider = 'resend' | 'zoho' | 'gmail'
-
-function getEmailProvider(): EmailProvider {
-  const provider = process.env.EMAIL_PROVIDER?.toLowerCase()
-  if (provider === 'gmail' || provider === 'smtp') {
-    return 'gmail'
-  }
-  if (provider === 'zoho' || provider === 'zohomail') {
-    return 'zoho'
-  }
-  return 'zoho' // Default to Zoho for professional emails
-}
-
-function getResendClient() {
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) {
-    throw new Error('RESEND_API_KEY is not configured')
-  }
-  return new Resend(apiKey)
-}
-
-function getZohoTransporter() {
-  const zohoUser = process.env.ZOHO_MAIL_USER
-  const zohoPassword = process.env.ZOHO_MAIL_PASSWORD
-  const zohoHost = process.env.ZOHO_MAIL_HOST || 'smtp.zoho.com'
-
-  if (!zohoUser || !zohoPassword) {
-    throw new Error('Zoho Mail SMTP not configured')
-  }
-
-  console.log(`[Email] Attempting Zoho login for: ${zohoUser} using host: ${zohoHost}`)
-
-  return nodemailer.createTransport({
-    host: zohoHost,
-    port: 465,
-    secure: true,
-    auth: {
-      user: zohoUser,
-      pass: zohoPassword,
-    },
-    // Adding keepalive and timeout to prevent connection drops
-    pool: true,
-    maxConnections: 1,
-    rateDelta: 1000,
-    rateLimit: 1
-  })
-}
-
-function getGmailTransporter() {
-  const gmailUser = process.env.GMAIL_USER
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD
-
-  if (!gmailUser || !gmailAppPassword) {
-    throw new Error('Gmail SMTP not configured')
-  }
-
-  return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: gmailUser,
-      pass: gmailAppPassword,
-    },
-  })
-}
-
-async function sendEmail(to: string, subject: string, html: string): Promise<void> {
-  const provider = getEmailProvider()
-
-  if (provider === 'zoho') {
-    const transporter = getZohoTransporter()
-    await transporter.sendMail({
-      from: `"Whispering Palms" <${process.env.ZOHO_MAIL_USER}>`,
-      to,
-      subject,
-      html,
-    })
-  } else if (provider === 'gmail') {
-    const transporter = getGmailTransporter()
-    await transporter.sendMail({
-      from: `"Whispering Palms" <${process.env.GMAIL_USER}>`,
-      to,
-      subject,
-      html,
-    })
-  } else {
-    const resend = getResendClient()
-    const { error } = await resend.emails.send({
-      from: process.env.EMAIL_FROM!,
-      to,
-      subject,
-      html,
-    })
-    if (error) throw new Error(`Failed to send email: ${error.message}`)
-  }
-}
+/** Safety valve: one run should never send more than this. */
+const MAX_PER_RUN = parseInt(process.env.EMAIL_MAX_PER_RUN || '50', 10)
 
 export async function GET(request: NextRequest) {
+  const denied = requireCronAuth(request)
+  if (denied) return denied
+
   try {
-    const supabase = await createClient()
+    const mailer = getMailerStatus()
+    if (!mailer.configured) {
+      return createErrorResponse(
+        `Email provider "${mailer.provider}" is not configured. Check SMTP_HOST/SMTP_USER/SMTP_PASSWORD and EMAIL_FROM.`,
+        503
+      )
+    }
+
+    // Test mode ignores the per-plan delivery delay. That is right locally and
+    // wrong in production, where a Basic user would get their reading instantly
+    // instead of after 24 hours.
+    const isTestMode =
+      process.env.EMAIL_TEST_MODE === 'true' && process.env.NODE_ENV !== 'production'
+
+    if (process.env.EMAIL_TEST_MODE === 'true' && process.env.NODE_ENV === 'production') {
+      console.warn('[cron] EMAIL_TEST_MODE is set in production and is being ignored.')
+    }
+
+    const supabase = createAdminClient()
     const now = new Date()
 
-    // Get all pending emails that are due for delivery
     const { data: answers, error: fetchError } = await supabase
       .from('answers')
-      .select(`
+      .select(
+        `
         id,
         text,
         text_internal_en,
@@ -129,160 +69,125 @@ export async function GET(request: NextRequest) {
           text_original,
           user_id
         )
-      `)
+      `
+      )
       .not('email_metadata', 'is', null)
 
     if (fetchError) {
-      console.error('Error fetching pending emails:', fetchError)
+      console.error('[cron] Could not read pending emails:', fetchError)
       return createErrorResponse('Failed to fetch pending emails', 500)
     }
 
     if (!answers || answers.length === 0) {
-      console.log('📭 No pending emails found')
-      return createSuccessResponse({
-        sent: 0,
-        message: 'No pending emails',
-      })
+      return createSuccessResponse({ sent: 0, message: 'No pending emails' })
     }
 
-    console.log(`📬 Found ${answers.length} pending email(s) to check`)
-
     let sentCount = 0
+    let skipped = 0
     const errors: string[] = []
 
     for (const answer of answers) {
+      if (sentCount >= MAX_PER_RUN) {
+        console.warn(`[cron] Reached the ${MAX_PER_RUN} per-run cap; remaining emails wait for the next run.`)
+        break
+      }
+
       const emailMetadata = answer.email_metadata as any
       if (!emailMetadata || emailMetadata.status !== 'pending') continue
 
-      // Check if email is due for delivery
       const deliveryTime = new Date(emailMetadata.delivery_time)
-      const isTestMode = process.env.EMAIL_TEST_MODE === 'true'
-      const emailProvider = getEmailProvider()
-      const planType = emailMetadata.plan_type || 'basic'
-
-      // Calculate time until delivery
-      const timeUntilDelivery = deliveryTime.getTime() - now.getTime()
-      const minutesUntilDelivery = Math.round(timeUntilDelivery / (1000 * 60))
-      const secondsUntilDelivery = Math.round(timeUntilDelivery / 1000)
-
-      // Debug logging
-      console.log(`\n🔍 [CRON] Checking email for ${planType} plan (answer ${answer.id}):`)
-      console.log(`   Scheduled delivery time: ${deliveryTime.toISOString()}`)
-      console.log(`   Current time:           ${now.toISOString()}`)
-      console.log(`   Time difference:        ${minutesUntilDelivery} minutes (${secondsUntilDelivery} seconds)`)
-      console.log(`   Test mode:              ${isTestMode}`)
-      console.log(`   Email provider:         ${emailProvider}`)
-      console.log(`   Is due?                 ${now >= deliveryTime ? 'YES ✅' : 'NO ⏳'}`)
-
-      // Check if email should be sent now
-      // IMPORTANT: Only send if delivery time has passed (unless test mode)
-      // Gmail provider ab bhi delays respect karega
-      const shouldSend =
-        isTestMode || // Test mode sends immediately
-        now >= deliveryTime // Production: send ONLY if delivery time has passed
-
-      if (!shouldSend) {
-        // Log when email will be sent
-        if (minutesUntilDelivery > 0) {
-          console.log(`⏳ [SKIP] Email for ${planType} plan will be sent in ${minutesUntilDelivery} minutes (${secondsUntilDelivery} seconds)`)
-        } else if (secondsUntilDelivery > 0) {
-          console.log(`⏳ [SKIP] Email for ${planType} plan will be sent in ${secondsUntilDelivery} seconds`)
-        } else {
-          console.log(`✅ [READY] Email for ${planType} plan is due now`)
-        }
-        continue // Skip emails that aren't due yet
-      }
-
-      // Log why email is being sent
-      let sendReason = ''
-      if (isTestMode) {
-        sendReason = 'Test mode (immediate)'
-      } else {
-        sendReason = 'Delivery time reached'
-      }
-
-      console.log(`📧 [SEND] Sending email for ${planType} plan (answer ${answer.id})`)
-      console.log(`   Reason: ${sendReason}`)
-      console.log(`   Scheduled for: ${deliveryTime.toISOString()}`)
-      console.log(`   Current time:  ${now.toISOString()}\n`)
-
-      const question = (answer.questions as any)
-      const userId = answer.user_id
-
-      if (!question || !userId) {
-        errors.push(`Missing data for answer ${answer.id}`)
+      if (!isTestMode && now < deliveryTime) {
+        skipped++
         continue
       }
 
-      // Get user data
+      const question = answer.questions as any
+      const userId = answer.user_id
+
+      if (!question || !userId) {
+        errors.push(`Missing question or user for answer ${answer.id}`)
+        continue
+      }
+
       const { data: userData } = await supabase
         .from('users')
         .select('email, name')
         .eq('id', userId)
         .single()
 
-      if (!userData) {
-        errors.push(`User not found for answer ${answer.id}`)
+      if (!userData?.email) {
+        errors.push(`No email address for the user behind answer ${answer.id}`)
         continue
       }
 
       try {
-        // Generate email HTML
+        const planType = emailMetadata.plan_type
         const emailHtml = generateAnswerEmail({
           userName: userData.name,
           userEmail: userData.email,
           question: question.text_original,
-          answer: (emailMetadata.plan_type === 'flame' || emailMetadata.plan_type === 'superflame') ? '' : answer.text,
-          planType: emailMetadata.plan_type,
+          // Flame and SuperFlame get a link to the narrated playback page
+          // instead of the answer text.
+          answer: planType === 'flame' || planType === 'superflame' ? '' : answer.text,
+          planType,
           audioUrl: emailMetadata.audio_url,
           questionId: question.id,
           answerId: answer.id,
         })
 
-        // Send email
-        await sendEmail(
-          userData.email,
-          'Your Personal Reading from Whispering Palms',
-          emailHtml
-        )
+        await sendMail({
+          to: userData.email,
+          subject: 'Your Personal Reading from Whispering Palms',
+          html: emailHtml,
+        })
 
-        // Update answer email metadata to sent
         const sentAt = new Date().toISOString()
+
+        // Mark sent before touching the question, so a failure between the two
+        // cannot resend the same reading.
+        await supabase
+          .from('answers')
+          .update({
+            email_metadata: { ...emailMetadata, status: 'sent', sent_at: sentAt },
+          })
+          .eq('id', answer.id)
+
+        await supabase
+          .from('questions')
+          .update({ status: 'sent', email_sent_at: sentAt })
+          .eq('id', question.id)
+
+        sentCount++
+        console.log(`[cron] ✅ Sent reading for answer ${answer.id} (${planType})`)
+      } catch (error) {
+        console.error(`[cron] Failed to send for answer ${answer.id}:`, error)
+        errors.push(`Failed to send for answer ${answer.id}`)
+
+        // Record the failure so a permanently broken address does not get
+        // retried forever.
+        const attempts = (emailMetadata.attempts ?? 0) + 1
         await supabase
           .from('answers')
           .update({
             email_metadata: {
               ...emailMetadata,
-              status: 'sent',
-              sent_at: sentAt,
+              attempts,
+              last_error: error instanceof Error ? error.message.slice(0, 300) : 'unknown',
+              status: attempts >= 5 ? 'failed' : 'pending',
             },
           })
           .eq('id', answer.id)
-
-        // Update question status to 'sent' and set email_sent_at
-        await supabase
-          .from('questions')
-          .update({
-            status: 'sent',
-            email_sent_at: sentAt,
-          })
-          .eq('id', question.id)
-
-        sentCount++
-        console.log(`✅ Email sent for answer ${answer.id} (plan: ${emailMetadata.plan_type})`)
-      } catch (error) {
-        console.error(`Error sending email for answer ${answer.id}:`, error)
-        errors.push(`Failed to send email for answer ${answer.id}`)
       }
     }
 
     return createSuccessResponse({
       sent: sentCount,
+      skipped,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Sent ${sentCount} email(s)`,
+      message: `Sent ${sentCount} email(s), ${skipped} not yet due`,
     })
   } catch (error) {
-    console.error('Error in GET /api/email/cron:', error)
+    console.error('[cron] Unexpected error:', error)
     return createErrorResponse(
       error instanceof Error ? error.message : 'Internal server error',
       500

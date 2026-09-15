@@ -252,6 +252,8 @@ export default {
   // Subscription Plans
   'plan.basic': 'ベーシック',
   'plan.basicDesc': '占星術の洞察を始めるのに最適',
+  'plan.free': '無料',
+  'plan.freeDesc': '1日2件の質問から始めましょう',
   'plan.spark': 'スパーク',
   'plan.sparkDesc': 'より迅速な回答で強化された体験',
   'plan.flame': 'フレーム',

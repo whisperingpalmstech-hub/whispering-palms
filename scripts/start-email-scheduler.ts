@@ -4,6 +4,10 @@
  * Run this alongside your dev server: npm run dev:scheduler
  */
 
+// Module scope (see email-cron-test.ts): keeps top-level consts out of the
+// shared global scope that tsc checks across all scripts.
+export {}
+
 const API_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 let isRunning = false

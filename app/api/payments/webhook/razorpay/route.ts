@@ -3,7 +3,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { activatePlan, isPlanType } from '@/lib/services/plan-activation'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -33,7 +34,10 @@ export async function POST(request: NextRequest) {
     }
 
     const event = JSON.parse(body)
-    const supabase = await createClient()
+    // Webhooks carry no user session, so they must use the service-role
+    // client: RLS owner policies would deny every one of these writes to the
+    // anonymous role. User attribution always comes from the verified payload.
+    const supabase = createAdminClient()
 
     // Log webhook event
     await supabase.from('webhook_events').insert({
@@ -88,14 +92,49 @@ export async function POST(request: NextRequest) {
 async function handlePaymentCaptured(payload: any, supabase: any) {
   const payment = payload.payment.entity
 
-  await supabase
+  // create-intent stores the Razorpay ORDER id as provider_payment_id, so
+  // match on payment.order_id first (payment.id is the captured payment).
+  const { data: transaction } = await supabase
     .from('transactions')
-    .update({
-      status: 'succeeded',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('provider_payment_id', payment.id)
+    .select('id, user_id, metadata')
+    .eq('provider_payment_id', payment.order_id)
     .eq('provider', 'razorpay')
+    .single()
+
+  if (transaction) {
+    await supabase
+      .from('transactions')
+      .update({
+        status: 'succeeded',
+        metadata: {
+          ...((transaction.metadata as any) || {}),
+          razorpay_payment_id: payment.id,
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', transaction.id)
+
+    // Idempotent with /api/payments/verify, which activates from the same
+    // transaction row: whoever runs first wins, the second is a no-op.
+    const planType = (transaction.metadata as any)?.planType
+    if (transaction.user_id && isPlanType(planType) && planType !== 'basic') {
+      try {
+        await activatePlan(supabase, transaction.user_id, planType)
+      } catch (error) {
+        console.error('[razorpay webhook] plan activation failed:', error)
+      }
+    }
+  } else {
+    // Fallback for rows recorded with the payment id (legacy verify path).
+    await supabase
+      .from('transactions')
+      .update({
+        status: 'succeeded',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('provider_payment_id', payment.id)
+      .eq('provider', 'razorpay')
+  }
 }
 
 async function handlePaymentFailed(payload: any, supabase: any) {

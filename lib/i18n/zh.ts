@@ -252,6 +252,8 @@ export default {
   // Subscription Plans
   'plan.basic': '基础',
   'plan.basicDesc': '开始占星见解的完美之选',
+  'plan.free': '免费',
+  'plan.freeDesc': '每天 2 个问题，先体验一下',
   'plan.spark': '火花',
   'plan.sparkDesc': '更快速的回答带来增强体验',
   'plan.flame': '火焰',

@@ -4,6 +4,11 @@
  * Usage: npm run email:cron or tsx scripts/email-cron-test.ts
  */
 
+// This file is type-checked alongside the app (see tsconfig include), so it
+// must be a module — otherwise its top-level consts collide with the other
+// scripts' globals.
+export {}
+
 const API_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
 async function triggerEmailCron() {

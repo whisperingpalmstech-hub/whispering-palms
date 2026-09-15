@@ -252,6 +252,8 @@ export default {
   // Subscription Plans
   'plan.basic': 'أساسي',
   'plan.basicDesc': 'مثالي للبدء برؤى فلكية',
+  'plan.free': 'مجاني',
+  'plan.freeDesc': 'جرّبه بسؤالين في اليوم',
   'plan.spark': 'شرارة',
   'plan.sparkDesc': 'تجربة محسنة مع استجابات أسرع',
   'plan.flame': 'شعلة',

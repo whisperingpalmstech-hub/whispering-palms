@@ -33,19 +33,23 @@ class QuotaService {
   private config: QuotaConfig
 
   constructor() {
-    // Quota limits per plan
+    // Quota limits per plan.
+    // 'basic' is the free tier (displayed as "Free" - see lib/i18n plan.free).
+    // Superflame is marketed as "Unlimited" but soft-capped: an actual unbounded
+    // quota has no defence against one account hammering the LLM/TTS pipeline
+    // all day. 60/day is far beyond any real usage pattern.
     this.config = {
       basic: {
         maxQuestions: parseInt(process.env.BASIC_MAX_QUESTIONS || '2', 10),
       },
       spark: {
-        maxQuestions: parseInt(process.env.SPARK_MAX_QUESTIONS || '5', 10),
+        maxQuestions: parseInt(process.env.SPARK_MAX_QUESTIONS || '6', 10),
       },
       flame: {
-        maxQuestions: parseInt(process.env.FLAME_MAX_QUESTIONS || '8', 10),
+        maxQuestions: parseInt(process.env.FLAME_MAX_QUESTIONS || '12', 10),
       },
       superflame: {
-        maxQuestions: -1, // Unlimited
+        maxQuestions: parseInt(process.env.SUPERFLAME_MAX_QUESTIONS || '60', 10),
       },
     }
   }
@@ -75,19 +79,19 @@ class QuotaService {
         return this.resetQuota(userId, planType)
       }
 
-      // Check if plan_type matches current plan - if not, update it
-      if (existingQuota.plan_type !== planType) {
+      const maxQuestions = this.getPersistedMaxQuestions(planType)
+
+      // Reconcile quota when the user's plan changed or the plan allowance changed.
+      if (existingQuota.plan_type !== planType || existingQuota.max_questions !== maxQuestions) {
         console.log(`⚠️ Plan mismatch detected. Updating quota from ${existingQuota.plan_type} to ${planType}`)
-        const maxQuestions = this.config[planType].maxQuestions === -1 ? 999999 : this.config[planType].maxQuestions
-        
+
         // Update quota with new plan
         const { data: updatedQuota, error: updateError } = await supabase
           .from('daily_quotas')
           .update({
             plan_type: planType,
             max_questions: maxQuestions,
-            // Keep remaining questions but cap at new max
-            remaining_questions: Math.min(existingQuota.remaining_questions || 0, maxQuestions),
+            remaining_questions: this.reconcileRemainingQuestions(existingQuota, maxQuestions),
             updated_at: new Date().toISOString(),
           })
           .eq('id', existingQuota.id)
@@ -106,7 +110,7 @@ class QuotaService {
     }
 
     // Create new quota for today
-    const maxQuestions = this.config[planType].maxQuestions === -1 ? 999999 : this.config[planType].maxQuestions // Unlimited for superflame
+    const maxQuestions = this.getPersistedMaxQuestions(planType)
     const resetAt = this.calculateResetTime()
 
     const { data: newQuota, error: createError } = await supabase
@@ -248,7 +252,7 @@ class QuotaService {
   ): Promise<DailyQuota> {
     const supabase = await createClient()
     const today = new Date().toISOString().split('T')[0]
-    const maxQuestions = this.config[planType].maxQuestions === -1 ? 999999 : this.config[planType].maxQuestions
+    const maxQuestions = this.getPersistedMaxQuestions(planType)
     const resetAt = this.calculateResetTime()
 
     const { data: updated, error: updateError } = await supabase
@@ -285,6 +289,23 @@ class QuotaService {
     tomorrow.setDate(tomorrow.getDate() + 1)
     tomorrow.setHours(0, 0, 0, 0) // Midnight
     return tomorrow
+  }
+
+  private getPersistedMaxQuestions(planType: 'basic' | 'spark' | 'flame' | 'superflame'): number {
+    const configuredMaxQuestions = this.config[planType].maxQuestions
+    return configuredMaxQuestions === -1 ? 999999 : configuredMaxQuestions
+  }
+
+  private reconcileRemainingQuestions(
+    existingQuota: Pick<DailyQuota, 'max_questions' | 'remaining_questions'>,
+    maxQuestions: number
+  ): number {
+    const usedQuestions = Math.max(
+      (existingQuota.max_questions || maxQuestions) - (existingQuota.remaining_questions || 0),
+      0
+    )
+
+    return Math.max(maxQuestions - usedQuestions, 0)
   }
 
   /**

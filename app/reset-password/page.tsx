@@ -13,15 +13,20 @@ export default function ResetPasswordPage() {
     const [success, setSuccess] = useState(false)
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
+    const [checkingSession, setCheckingSession] = useState(true)
     const supabase = createClient()
 
     useEffect(() => {
-        // Check if we have a session or recovery token in the URL
+        // /api/auth/callback exchanges the emailed recovery token for a session
+        // cookie before redirecting here. Without that session updateUser() fails
+        // with a confusing "Auth session missing" — so say so up front instead of
+        // rendering a form that cannot work.
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession()
             if (!session) {
-                // Supabase handles the session via the recovery link automatically
+                setError('This password reset link is invalid or has expired. Please request a new one.')
             }
+            setCheckingSession(false)
         }
         checkSession()
     }, [supabase.auth])
@@ -142,7 +147,7 @@ export default function ResetPasswordPage() {
 
                             <button
                                 type="submit"
-                                disabled={loading}
+                                disabled={loading || checkingSession}
                                 className="w-full px-6 py-3.5 bg-gradient-to-r from-gold-500 to-gold-600 hover:from-gold-600 hover:to-gold-700 text-white rounded-xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-soft hover:shadow-soft-lg transform hover:scale-[1.01]"
                             >
                                 {loading ? (

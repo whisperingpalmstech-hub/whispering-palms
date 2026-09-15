@@ -47,6 +47,18 @@ cd whispering-palms
 npm install
 ```
 
+### Running locally without Supabase
+
+No Supabase project needed:
+
+```bash
+npm run dev:local
+```
+
+Authentication and the database are replaced by an in-memory stub. See
+[docs/LOCAL_DEV.md](docs/LOCAL_DEV.md) — including why the bypass cannot
+activate in production.
+
 ### 3. Environment Variables
 
 Create `.env.local` file in root directory:
@@ -65,20 +77,62 @@ JWT_SECRET=your-super-secret-jwt-key-change-this
 JWT_EXPIRES_IN=7d
 
 # Email Configuration (Choose ONE)
-# Option A: Zoho Mail (Recommended for Production)
+# The same relay must also be set as Supabase Auth's Custom SMTP, or signup
+# confirmation mail falls back to Supabase's ~2/hour built-in sender and new
+# users hit "email rate limit exceeded". Full runbook: docs/EMAIL_SETUP.md
+
+# Option A: ZeptoMail (Recommended for Production)
+EMAIL_PROVIDER=zeptomail
+SMTP_HOST=smtp.zeptomail.com
+SMTP_PORT=587
+SMTP_USER=emailapikey
+SMTP_PASSWORD=your-zeptomail-send-mail-token
+EMAIL_FROM=noreply@yourdomain.com
+EMAIL_FROM_NAME=Whispering Palms
+
+# Option B: Any other SMTP relay (SES, Postal, mailcow, ...)
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.your-relay.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-username
+SMTP_PASSWORD=your-smtp-password
+EMAIL_FROM=noreply@yourdomain.com
+
+# Option C: Zoho Mail mailbox SMTP (legacy, has a daily send cap)
 EMAIL_PROVIDER=zoho
 ZOHO_MAIL_USER=noreply@yourdomain.com
 ZOHO_MAIL_PASSWORD=your-zoho-mail-password
 
-# Option B: Resend (Alternative Production Option)
+# Option D: Resend
 EMAIL_PROVIDER=resend
 RESEND_API_KEY=re_your_resend_api_key
 EMAIL_FROM=noreply@yourdomain.com
 
-# Option C: Gmail SMTP (Testing Only)
+# Option E: Gmail SMTP (Testing Only)
 EMAIL_PROVIDER=gmail
 GMAIL_USER=your-email@gmail.com
 GMAIL_APP_PASSWORD=your-app-specific-password
+
+# Text-to-Speech (optional - readings are sent without audio if unset)
+# Provider: google, voicerss, or none. Defaults to trying google then voicerss.
+TTS_PROVIDER=google
+TTS_SPEAKING_RATE=1.0
+TTS_PITCH=0.0
+TTS_VOICE_GENDER=FEMALE
+# Voices come from lib/i18n/registry.ts. A language with no voice gets NO audio -
+# it is never spoken in another language.
+
+# Speech-to-Text for voice questions (optional - the mic button hides if unset)
+# Provider: whisper, google, or none. Whisper detects the spoken language itself.
+STT_PROVIDER=whisper
+OPENAI_API_KEY=sk-your-openai-key
+# Google STT reuses GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_APPLICATION_CREDENTIALS
+
+# Machine endpoints — REQUIRED in production
+# Without CRON_SECRET the email cron refuses to run rather than sitting open.
+CRON_SECRET=long-random-string
+ADMIN_API_TOKEN=another-long-random-string-16-plus
+TELEGRAM_WEBHOOK_SECRET=telegram-webhook-secret
 
 # Email Testing (set to false in production)
 EMAIL_TEST_MODE=false
@@ -148,9 +202,14 @@ LIBRETRANSLATE_API_URL=https://your-libretranslate-instance.com
 TRANSLATION_API_KEY=your_translation_api_key
 
 # Quota Configuration (Optional - defaults provided)
+# Prices for the paid plans live in lib/config/plans.ts, not here - keep both
+# in sync with the plan cards in app/subscription/page.tsx.
 BASIC_MAX_QUESTIONS=2
-SPARK_MAX_QUESTIONS=5
-FLAME_MAX_QUESTIONS=8
+SPARK_MAX_QUESTIONS=6
+FLAME_MAX_QUESTIONS=12
+# "Unlimited" on Superflame is a generous soft cap, not a literal unbounded
+# quota - protects against one account driving unbounded LLM/TTS cost.
+SUPERFLAME_MAX_QUESTIONS=60
 ```
 
 ### 4. Set Up Supabase

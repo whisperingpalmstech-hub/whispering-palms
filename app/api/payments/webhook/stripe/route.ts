@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getPaymentService } from '@/lib/services/payment/PaymentService'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       process.env.STRIPE_WEBHOOK_SECRET || ''
     )
 
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     // Log webhook event
     await supabase.from('webhook_events').insert({

@@ -249,6 +249,8 @@ export default {
   // Subscription Plans
   'plan.basic': 'बेसिक',
   'plan.basicDesc': 'ज्योतिष अंतर्दृष्टि के साथ शुरुआत करने के लिए आदर्श',
+  'plan.free': 'फ्री',
+  'plan.freeDesc': 'रोज़ाना 2 प्रश्नों के साथ शुरुआत करें',
   'plan.spark': 'स्पार्क',
   'plan.sparkDesc': 'तेज़ प्रतिक्रियाओं के साथ बेहतर अनुभव',
   'plan.flame': 'फ्लेम',
@@ -287,4 +289,10 @@ export default {
   // Common extras
   'common.readMore': 'और पढ़ें',
   'common.showLess': 'कम दिखाएं',
+
+  // Added to match en.ts
+  'palm.uploadTipsTitle': 'सर्वोत्तम परिणामों के लिए अपलोड सुझाव',
+  'palm.tipContent': 'अपना हाथ अच्छी रोशनी वाली सपाट सतह पर रखें। अपनी हथेली को खुली रखें और उंगलियों को स्वाभाविक रूप से अलग फैलाएं। सुनिश्चित करें कि सभी प्रमुख रेखाएं (जीवन रेखा, हृदय रेखा, मस्तिष्क रेखा) फोटो में स्पष्ट रूप से दिखाई दे रही हैं।',
+  'chat.typeYourQuestion': 'अपना प्रश्न यहाँ टाइप करें...',
+  'chat.answerDeliveryNote': 'आपकी सदस्यता योजना के आधार पर आपका उत्तर ईमेल द्वारा भेजा जाएगा।',
 } as const

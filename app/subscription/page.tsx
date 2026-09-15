@@ -26,8 +26,8 @@ interface Plan {
 const getPlans = (t: (key: string) => string): Plan[] => [
   {
     id: 'basic',
-    name: t('plan.basic'),
-    description: t('plan.basicDesc'),
+    name: t('plan.free'),
+    description: t('plan.freeDesc'),
     priceMonthly: 0,
     priceYearly: 0,
     questionsPerDay: 2,
@@ -50,14 +50,13 @@ const getPlans = (t: (key: string) => string): Plan[] => [
     id: 'spark',
     name: t('plan.spark'),
     description: t('plan.sparkDesc'),
-    priceMonthly: 10,
-    priceYearly: 80,
-    questionsPerDay: 5,
+    priceMonthly: 9,
+    priceYearly: 72,
+    questionsPerDay: 6,
     deliveryTime: '1 hour',
     color: 'spark',
-    popular: true,
     features: [
-      `5 ${t('plan.questionsPerDay')}`,
+      `6 ${t('plan.questionsPerDay')}`,
       t('plan.writtenAnswers'),
       `${t('plan.emailDelivery')} 1 hour`,
       t('plan.enhancedInsights'),
@@ -74,13 +73,14 @@ const getPlans = (t: (key: string) => string): Plan[] => [
     id: 'flame',
     name: t('plan.flame'),
     description: t('plan.flameDesc'),
-    priceMonthly: 25,
-    priceYearly: 200,
-    questionsPerDay: 8,
+    priceMonthly: 22,
+    priceYearly: 176,
+    questionsPerDay: 12,
     deliveryTime: '5 minutes',
     color: 'flame',
+    popular: true,
     features: [
-      `8 ${t('plan.questionsPerDay')}`,
+      `12 ${t('plan.questionsPerDay')}`,
       t('plan.voiceNarrationWithAstrologer'),
       `${t('plan.emailDelivery')} 5 minutes`,
       t('plan.professionalFormatting'),
@@ -99,8 +99,8 @@ const getPlans = (t: (key: string) => string): Plan[] => [
     id: 'superflame',
     name: t('plan.superflame'),
     description: t('plan.superflameDesc'),
-    priceMonthly: 35,
-    priceYearly: 280,
+    priceMonthly: 39,
+    priceYearly: 312,
     questionsPerDay: t('common.unlimited'),
     deliveryTime: '5 minutes',
     color: 'superflame',
@@ -334,10 +334,44 @@ export default function SubscriptionPage() {
   const handleCheckoutSuccess = async () => {
     if (!selectedPlan) return
 
-    // After successful payment, update the plan
-    await updatePlanDirectly(selectedPlan.id as 'basic' | 'spark' | 'flame' | 'superflame')
-    setCheckoutOpen(false)
-    setSelectedPlan(null)
+    // The plan is activated SERVER-side (/api/payments/verify for Razorpay,
+    // verify-session/webhook for Stripe) after the provider confirms payment.
+    // This handler only reflects that state — it must never write the plan
+    // itself, or anyone could grant themselves a paid plan for free.
+    // Poll the quota endpoint briefly: webhooks can land a few seconds after
+    // the checkout window closes.
+    setLoading(true)
+    try {
+      const planId = selectedPlan.id as 'basic' | 'spark' | 'flame' | 'superflame'
+      let confirmed = false
+      for (let i = 0; i < 6 && !confirmed; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, 2000))
+        try {
+          const res = await fetch('/api/quota', { cache: 'no-store' })
+          const result = await res.json()
+          if (res.ok && result.data?.plan === planId) {
+            confirmed = true
+          }
+        } catch {
+          // Keep polling; a failed read is not a failed payment.
+        }
+      }
+      setCurrentPlan(planId)
+      showToast(
+        confirmed
+          ? `Success! Your ${planId.charAt(0).toUpperCase() + planId.slice(1)} plan is now active.`
+          : 'Payment received! Your plan is activating — it will appear in your quota shortly.',
+        'success'
+      )
+      window.dispatchEvent(new CustomEvent('planChanged', { detail: { planType: planId } }))
+      setTimeout(() => {
+        router.push('/chat')
+      }, 1500)
+    } finally {
+      setLoading(false)
+      setCheckoutOpen(false)
+      setSelectedPlan(null)
+    }
   }
 
   return (

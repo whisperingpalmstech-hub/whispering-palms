@@ -7,6 +7,8 @@
  * Documentation: https://cloud.google.com/text-to-speech/docs
  */
 
+import { getVoiceSpec, hasVoice, LANGUAGES } from '@/lib/i18n/registry'
+
 interface GoogleTTSConfig {
     projectId: string
     credentials: any
@@ -25,39 +27,40 @@ interface AudioConfig {
     volumeGainDb?: number // -96.0 to 16.0
 }
 
-// Language to Google Cloud TTS voice mapping
-// Using WaveNet voices for best quality (free tier: 1M chars/month)
-// Language to Google Cloud TTS voice mapping
-// Using WaveNet voices for best quality (free tier: 1M chars/month)
-const LANGUAGE_VOICE_MAP: Record<string, VoiceParams> = {
-    'en': { languageCode: 'en-US', name: 'en-US-Wavenet-C', ssmlGender: 'FEMALE' },
-    'hi': { languageCode: 'hi-IN', name: 'hi-IN-Wavenet-A', ssmlGender: 'FEMALE' },
-    'ar': { languageCode: 'ar-XA', name: 'ar-XA-Wavenet-A', ssmlGender: 'FEMALE' },
-    'ru': { languageCode: 'ru-RU', name: 'ru-RU-Wavenet-A', ssmlGender: 'FEMALE' },
-    'zh': { languageCode: 'cmn-CN', name: 'cmn-CN-Wavenet-A', ssmlGender: 'FEMALE' },
-    'ko': { languageCode: 'ko-KR', name: 'ko-KR-Wavenet-A', ssmlGender: 'FEMALE' },
-    'ja': { languageCode: 'ja-JP', name: 'ja-JP-Wavenet-A', ssmlGender: 'FEMALE' },
-    'es': { languageCode: 'es-ES', name: 'es-ES-Wavenet-A', ssmlGender: 'FEMALE' },
-    'fr': { languageCode: 'fr-FR', name: 'fr-FR-Wavenet-A', ssmlGender: 'FEMALE' },
-    'de': { languageCode: 'de-DE', name: 'de-DE-Wavenet-A', ssmlGender: 'FEMALE' },
-    'it': { languageCode: 'it-IT', name: 'it-IT-Wavenet-A', ssmlGender: 'FEMALE' },
-    'pt': { languageCode: 'pt-BR', name: 'pt-BR-Wavenet-A', ssmlGender: 'FEMALE' },
+/**
+ * Voices come from lib/i18n/registry.ts, not from a map kept here. A language
+ * with no voice returns null and MUST produce no audio - substituting an English
+ * voice hands the listener a reading they cannot understand.
+ */
+function resolveVoice(language: string): VoiceParams | null {
+    const spec = getVoiceSpec(language)
+    if (!spec) return null
+
+    return {
+        languageCode: spec.locale,
+        name: process.env.TTS_VOICE_OVERRIDE || spec.preferredVoice,
+        ssmlGender: (process.env.TTS_VOICE_GENDER as VoiceParams['ssmlGender']) || 'FEMALE',
+    }
 }
 
-// Fallback to Standard voices if WaveNet fails (4M chars/month free)
-const LANGUAGE_VOICE_FALLBACK: Record<string, VoiceParams> = {
-    'en': { languageCode: 'en-US', name: 'en-US-Standard-C', ssmlGender: 'FEMALE' },
-    'hi': { languageCode: 'hi-IN', name: 'hi-IN-Standard-A', ssmlGender: 'FEMALE' },
-    'ar': { languageCode: 'ar-XA', name: 'ar-XA-Standard-A', ssmlGender: 'FEMALE' },
-    'ru': { languageCode: 'ru-RU', name: 'ru-RU-Standard-A', ssmlGender: 'FEMALE' },
-    'zh': { languageCode: 'cmn-CN', name: 'cmn-CN-Standard-A', ssmlGender: 'FEMALE' },
-    'ko': { languageCode: 'ko-KR', name: 'ko-KR-Standard-A', ssmlGender: 'FEMALE' },
-    'ja': { languageCode: 'ja-JP', name: 'ja-JP-Standard-A', ssmlGender: 'FEMALE' },
-    'es': { languageCode: 'es-ES', name: 'es-ES-Standard-A', ssmlGender: 'FEMALE' },
-    'fr': { languageCode: 'fr-FR', name: 'fr-FR-Standard-A', ssmlGender: 'FEMALE' },
-    'de': { languageCode: 'de-DE', name: 'de-DE-Standard-A', ssmlGender: 'FEMALE' },
-    'it': { languageCode: 'it-IT', name: 'it-IT-Standard-A', ssmlGender: 'FEMALE' },
-    'pt': { languageCode: 'pt-BR', name: 'pt-BR-Standard-A', ssmlGender: 'FEMALE' },
+/**
+ * Standard voices are cheaper and always present where a WaveNet voice exists,
+ * so the fallback is derived rather than maintained as a second map.
+ */
+function toStandardVoice(voice: VoiceParams): VoiceParams {
+    return {
+        ...voice,
+        name: voice.name?.replace(/-(Wavenet|Neural2|Studio)-/, '-Standard-'),
+    }
+}
+
+/** Speaking rate and pitch are configuration, not constants. */
+function audioConfigFromEnv(): { audioEncoding: 'MP3'; speakingRate: number; pitch: number } {
+    return {
+        audioEncoding: 'MP3',
+        speakingRate: parseFloat(process.env.TTS_SPEAKING_RATE || '1.0'),
+        pitch: parseFloat(process.env.TTS_PITCH || '0.0'),
+    }
 }
 
 class GoogleTTSService {
@@ -204,9 +207,8 @@ class GoogleTTSService {
     /**
      * Get voice parameters for a language
      */
-    private getVoiceParams(language: string): VoiceParams {
-        const lang = language.toLowerCase().split('-')[0] // Extract base language code
-        return LANGUAGE_VOICE_MAP[lang] || LANGUAGE_VOICE_MAP['en']
+    private getVoiceParams(language: string): VoiceParams | null {
+        return resolveVoice(language)
     }
 
     /**
@@ -222,6 +224,15 @@ class GoogleTTSService {
 
         const accessToken = await this.getAccessToken()
         const voiceParams = this.getVoiceParams(language)
+
+        if (!voiceParams) {
+            // Deliberate: the caller checks isLanguageSupported() first and skips
+            // audio entirely. Reaching here means that check was missed.
+            throw new Error(
+                `No Google TTS voice exists for language "${language}". ` +
+                'Audio must be skipped rather than generated in another language.'
+            )
+        }
 
         // Clean and prepare text
         const cleanText = text
@@ -252,11 +263,7 @@ class GoogleTTSService {
                 name: voiceParams.name,
                 ssmlGender: voiceParams.ssmlGender,
             },
-            audioConfig: {
-                audioEncoding: 'MP3',
-                speakingRate: 1.0,
-                pitch: 0.0,
-            },
+            audioConfig: audioConfigFromEnv(),
         }
 
         try {
@@ -297,21 +304,24 @@ class GoogleTTSService {
      */
     private async generateSpeechWithFallback(text: string, language: string): Promise<string> {
         const accessToken = await this.getAccessToken()
-        const lang = language.toLowerCase().split('-')[0]
-        const voiceParams = LANGUAGE_VOICE_FALLBACK[lang] || LANGUAGE_VOICE_FALLBACK['en']
+        const primary = resolveVoice(language)
+
+        if (!primary) {
+            throw new Error(`No Google TTS voice exists for language "${language}".`)
+        }
+
+        const voiceParams = toStandardVoice(primary)
 
         const requestBody = {
             input: { text },
             voice: {
                 languageCode: voiceParams.languageCode,
+                // Omitting the name lets Google pick any voice for the locale, so a
+                // stale voice name degrades instead of failing the whole reading.
                 name: voiceParams.name,
                 ssmlGender: voiceParams.ssmlGender,
             },
-            audioConfig: {
-                audioEncoding: 'MP3',
-                speakingRate: 1.0,
-                pitch: 0.0,
-            },
+            audioConfig: audioConfigFromEnv(),
         }
 
         const response = await fetch('https://texttospeech.googleapis.com/v1/text:synthesize', {
@@ -439,15 +449,14 @@ class GoogleTTSService {
      * Get list of supported languages
      */
     getSupportedLanguages(): string[] {
-        return Object.keys(LANGUAGE_VOICE_MAP)
+        return LANGUAGES.filter((l) => l.tts !== null).map((l) => l.code)
     }
 
     /**
      * Check if a language is supported
      */
     isLanguageSupported(language: string): boolean {
-        const lang = language.toLowerCase().split('-')[0]
-        return lang in LANGUAGE_VOICE_MAP
+        return hasVoice(language)
     }
 }
 

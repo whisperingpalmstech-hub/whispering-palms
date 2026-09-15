@@ -249,6 +249,8 @@ export default {
   // Subscription Plans - French
   'plan.basic': 'Basique',
   'plan.basicDesc': 'Parfait pour commencer avec les perspectives astrologiques',
+  'plan.free': 'Gratuit',
+  'plan.freeDesc': 'Essayez avec 2 questions par jour',
   'plan.spark': 'Étincelle',
   'plan.sparkDesc': 'Expérience améliorée avec des réponses plus rapides',
   'plan.flame': 'Flamme',
@@ -287,4 +289,10 @@ export default {
   // Common extras
   'common.readMore': 'Lire plus',
   'common.showLess': 'Afficher moins',
+
+  // Added to match en.ts
+  'palm.uploadTipsTitle': 'Conseils de Téléchargement pour de Meilleurs Résultats',
+  'palm.tipContent': 'Placez votre main sur une surface plate avec un bon éclairage. Gardez votre paume ouverte avec les doigts naturellement étalés. Assurez-vous que toutes les lignes principales (ligne de vie, ligne de cœur, ligne de tête) sont clairement visibles sur la photo.',
+  'chat.typeYourQuestion': 'Tapez votre question ici...',
+  'chat.answerDeliveryNote': 'Votre réponse vous sera envoyée par e-mail selon votre formule d’abonnement.',
 } as const

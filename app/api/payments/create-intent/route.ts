@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getPaymentService } from '@/lib/services/payment/PaymentService'
 import { createClient } from '@/lib/supabase/server'
 import { PaymentProvider } from '@/lib/services/payment/types'
+import { getPlanPrice } from '@/lib/config/plans'
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,12 +22,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { 
-      planType, 
-      billingPeriod, 
+    const {
+      planType,
+      billingPeriod,
       provider = 'stripe' as PaymentProvider,
-      amount,
       currency = 'USD'
+      // NOTE: a client-supplied `amount` used to be accepted here and take
+      // priority over the server price - anyone could set their own charge
+      // amount for any plan. The price is now always computed server-side;
+      // nothing from the request body feeds into what gets charged.
     } = body
 
     if (!planType || !billingPeriod) {
@@ -36,18 +40,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get plan pricing
-    const planPrices: Record<string, Record<string, number>> = {
-      spark: { monthly: 10, yearly: 80 },
-      flame: { monthly: 25, yearly: 200 },
-      superflame: { monthly: 35, yearly: 300 },
-    }
+    const finalAmount = getPlanPrice(planType, billingPeriod)
 
-    const finalAmount = amount || planPrices[planType]?.[billingPeriod] || 0
-
-    if (finalAmount === 0) {
+    if (finalAmount === null) {
       return NextResponse.json(
-        { error: 'Invalid plan or amount' },
+        { error: 'Invalid plan or billing period' },
         { status: 400 }
       )
     }

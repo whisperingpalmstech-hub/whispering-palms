@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://whisperingpalms.com'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'https://whispering-palms.org'),
   alternates: {
     canonical: '/',
   },
@@ -107,12 +107,12 @@ export default function RootLayout({
               "@type": "WebSite",
               "name": "Whispering Palms",
               "description": "Expert palmistry and Vedic astrology services for personalized life guidance",
-              "url": process.env.NEXT_PUBLIC_APP_URL || "https://whisperingpalms.com",
+              "url": process.env.NEXT_PUBLIC_APP_URL || "https://whispering-palms.org",
               "potentialAction": {
                 "@type": "SearchAction",
                 "target": {
                   "@type": "EntryPoint",
-                  "urlTemplate": `${process.env.NEXT_PUBLIC_APP_URL || "https://whisperingpalms.com"}/search?q={search_term_string}`
+                  "urlTemplate": `${process.env.NEXT_PUBLIC_APP_URL || "https://whispering-palms.org"}/search?q={search_term_string}`
                 },
                 "query-input": "required name=search_term_string"
               },
@@ -129,7 +129,7 @@ export default function RootLayout({
               "@context": "https://schema.org",
               "@type": "ProfessionalService",
               "name": "Whispering Palms",
-              "image": `${process.env.NEXT_PUBLIC_APP_URL || "https://whisperingpalms.com"}/logo.png`,
+              "image": `${process.env.NEXT_PUBLIC_APP_URL || "https://whispering-palms.org"}/logo.png`,
               "description": "Professional palmistry and Vedic astrology readings by certified astrologers. Get insights about love, career, health, and life path.",
               "keywords": "palmistry, palm reading, vedic astrology, horoscope, birth chart, kundli, jyotish",
               "priceRange": "$$",

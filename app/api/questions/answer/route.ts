@@ -12,8 +12,30 @@ import {
   extractPalmistryData, // 🔥 NEW: Extract actual palmistry features instead of generic vision labels
 } from '@/lib/services/user-context'
 import { scheduleEmailDelivery, getDeliveryDelay, generateAnswerEmail } from '@/lib/services/email'
-import { googleTTSService } from '@/lib/services/google-tts'
-import { voiceRSSTTSService } from '@/lib/services/voicerss-tts' // Fallback for English
+import { synthesize } from '@/lib/services/tts'
+
+/**
+ * Mark a question as failed so it does not sit at "pending" forever.
+ *
+ * Nothing retries orphaned questions, and the UI told users their answer would
+ * arrive by email - which never happened. A failed question is at least honest,
+ * and the user can ask again without having been charged (quota is only
+ * consumed once the answer is saved).
+ */
+async function markQuestionFailed(
+  supabase: { from: (t: string) => any },
+  questionId: string,
+  reason: string
+): Promise<void> {
+  try {
+    await supabase
+      .from('questions')
+      .update({ status: 'failed', error_message: reason.slice(0, 500) })
+      .eq('id', questionId)
+  } catch (error) {
+    console.error('Could not mark question as failed:', error)
+  }
+}
 
 /**
  * POST /api/questions/answer
@@ -121,8 +143,9 @@ export async function POST(request: NextRequest) {
         console.log(`✅ Created and saved workspace: ${newWorkspaceId}`)
       } catch (createError) {
         console.error('Error creating workspace:', createError)
+        await markQuestionFailed(supabase, question.id, 'Workspace could not be created')
         return createErrorResponse(
-          'Failed to create workspace. Please ensure AnythingLLM is running and API key is configured.',
+          'We could not reach the reading service. Your question was not charged - please try again shortly.',
           500
         )
       }
@@ -307,36 +330,33 @@ If the user asks in English or you cannot translate, just provide the English an
       llmModelUsed = (response as any).model || 'anythingllm'
       tokensUsed = (response as any).tokens || 0
 
-      // ✅ Consume quota ONLY after successful answer generation
-      const quotaResult = await quotaService.consumeQuota(user.id, planType)
-      if (!quotaResult.success) {
-        // Answer generated but quota consumption failed - log but don't fail
-        console.error('Answer generated but quota consumption failed:', quotaResult.error)
-      } else {
-        console.log('✅ Quota consumed. Remaining:', quotaResult.remaining)
-      }
+      // Quota is consumed after the answer row is saved, not here. Charging a
+      // question before the answer is persisted means a failed insert costs the
+      // user a question and leaves them with nothing.
     } catch (error) {
       console.error('Error calling AnythingLLM:', error)
 
       // If workspace is invalid, return error (workspace should only be created on registration)
-      if (error instanceof Error && (error.message.includes('not a valid workspace') || error.message.includes('recreate workspace') || error.message.includes('Invalid workspace ID'))) {
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (message.includes('not a valid workspace') || message.includes('recreate workspace') || message.includes('Invalid workspace ID')) {
+        await markQuestionFailed(supabase, question.id, 'Invalid workspace')
         return createErrorResponse(
-          'Workspace is invalid. Please contact support or complete registration again.',
+          'Something is wrong with your reading profile. Please contact support - your question was not charged.',
           500
         )
-      } else if (error instanceof Error && error.message.includes('ECONNREFUSED')) {
-        return createErrorResponse(
-          'AnythingLLM service is not available. Please ensure Docker containers are running and configured.',
-          503
-        )
-      } else if (error instanceof Error && (error.message.includes('LLM provider') || error.message.includes('fetch failed'))) {
-        return createErrorResponse(
-          'LLM provider is not configured in AnythingLLM. Please configure LLM provider in AnythingLLM settings (Settings → LLM Preference) and try again.',
-          503
-        )
-      } else {
-        throw error
       }
+
+      if (message.includes('ECONNREFUSED') || message.includes('LLM provider') || message.includes('fetch failed')) {
+        await markQuestionFailed(supabase, question.id, 'Reading service unavailable')
+        return createErrorResponse(
+          'The reading service is temporarily unavailable. Your question was not charged - please try again shortly.',
+          503
+        )
+      }
+
+      await markQuestionFailed(supabase, question.id, message)
+      throw error
     }
 
     if (!answerTextTranslated || answerTextTranslated.trim().length === 0) {
@@ -382,7 +402,21 @@ If the user asks in English or you cannot translate, just provide the English an
 
     if (answerError) {
       console.error('Error saving answer:', answerError)
-      return createErrorResponse('Failed to save answer', 500)
+      await markQuestionFailed(supabase, question.id, 'Answer could not be saved')
+      return createErrorResponse(
+        'We generated your reading but could not save it. Your question was not charged - please try again.',
+        500
+      )
+    }
+
+    // The answer is now durable, so the question can be charged for.
+    const quotaResult = await quotaService.consumeQuota(user.id, planType)
+    if (!quotaResult.success) {
+      // Not fatal: the user has their answer. Log it so a systematic quota
+      // failure is visible rather than silently giving away free questions.
+      console.error('Answer saved but quota consumption failed:', quotaResult.error)
+    } else {
+      console.log('✅ Quota consumed. Remaining:', quotaResult.remaining)
     }
 
     // Keep question status as 'pending' until email is sent
@@ -399,48 +433,27 @@ If the user asks in English or you cannot translate, just provide the English an
     const userName = userData?.name || undefined
     const userPreferredLanguage = userData?.preferred_language || 'en'
 
-    // Generate voice for Flame and SuperFlame plans using Google Cloud TTS
-    // Google TTS supports ALL languages: Hindi, Arabic, Russian, Chinese, Korean, etc.
-    // IMPORTANT: Use user's PREFERRED LANGUAGE from settings, not the detected question language
+    // Generate voice narration for Flame and SuperFlame plans.
+    // Provider selection lives in lib/services/tts - synthesize() returns null
+    // when no configured provider speaks the user's language, and the reading is
+    // then delivered without audio rather than spoken in the wrong language.
     let audioUrl: string | undefined
     if (planType === 'flame' || planType === 'superflame') {
       try {
-        // Use user's preferred language for voice narration
         const voiceLanguage = userPreferredLanguage || 'en'
         const textToSpeak = answerTextTranslated || answerTextInternalEn
 
-        console.log(`🎤 Voice narration language: ${voiceLanguage} (user preference)`)
+        const result = await synthesize({ text: textToSpeak, language: voiceLanguage })
 
-        // Primary: Use Google Cloud TTS (supports all languages)
-        if (googleTTSService.isAvailable()) {
-          console.log(`🎤 Using Google Cloud TTS for language: ${voiceLanguage}`)
-
-          // Check if language is supported by Google TTS
-          if (googleTTSService.isLanguageSupported(voiceLanguage)) {
-            // Generate audio file and get URL
-            audioUrl = await googleTTSService.generateSpeechFile(textToSpeak, voiceLanguage)
-            console.log(`✅ Voice generated using Google Cloud TTS (Lang: ${voiceLanguage}):`, audioUrl)
-          } else {
-            // Language not supported, use English
-            console.warn(`⚠️ Language ${voiceLanguage} not supported by Google TTS, using English`)
-            audioUrl = await googleTTSService.generateSpeechFile(textToSpeak, 'en')
-            console.log(`✅ Voice generated in English fallback:`, audioUrl)
-          }
-        }
-        // Fallback: Use VoiceRSS for English if Google TTS is not available
-        else if (voiceRSSTTSService.isAvailable() && voiceLanguage === 'en') {
-          console.log(`🎤 Using VoiceRSS fallback for English`)
-          audioUrl = await voiceRSSTTSService.generateSpeechUrlAsync(textToSpeak, 'en-us')
-          console.log(`✅ Voice generated using VoiceRSS (English only):`, audioUrl)
+        if (result) {
+          audioUrl = result.audioUrl
         } else {
-          console.warn('⚠️ No TTS service configured. Voice generation will be skipped.')
-          console.warn('💡 To enable voice for ALL languages: Set GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_SERVICE_ACCOUNT_JSON')
-          console.warn('💡 For English only fallback: Set VOICE_RSS_API_KEY')
+          // Expected for languages with no voice. The email still goes out.
+          console.warn(`⚠️ No audio produced for language ${voiceLanguage} - sending reading without voice`)
         }
       } catch (error) {
         console.error('❌ Error generating voice for Flame/SuperFlame plan:', error)
         console.warn('⚠️ Continuing without voice - email will be sent without audio')
-        // Continue without voice - email will be sent without audio
         audioUrl = undefined
       }
     }

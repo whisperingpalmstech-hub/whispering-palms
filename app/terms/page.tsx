@@ -240,8 +240,8 @@ export default function TermsPage() {
                             </p>
                             <div className="mt-4 p-6 bg-gold-50 rounded-lg border border-gold-200">
                                 <p className="text-text-primary font-semibold">Whispering Palms</p>
-                                <p className="text-text-secondary mt-2">Email: support@whisperingpalms.com</p>
-                                <p className="text-text-secondary">Legal Department: legal@whisperingpalms.com</p>
+                                <p className="text-text-secondary mt-2">Email: support@whispering-palms.org</p>
+                                <p className="text-text-secondary">Legal Department: legal@whispering-palms.org</p>
                             </div>
                         </section>
 

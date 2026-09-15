@@ -7,17 +7,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdminToken } from '@/lib/auth/cron'
 import { telegramBotService } from '@/lib/services/telegram-bot'
 
 export async function POST(request: NextRequest) {
     try {
-        // Verify admin authorization
-        const authHeader = request.headers.get('Authorization')
-        const adminToken = process.env.ADMIN_API_TOKEN || 'whispering-palms-admin'
-
-        if (!authHeader || authHeader !== `Bearer ${adminToken}`) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
+        const denied = requireAdminToken(request)
+        if (denied) return denied
 
         const body = await request.json()
         const webhookUrl = body.webhookUrl || `${process.env.NEXT_PUBLIC_APP_URL}/api/telegram/webhook`
@@ -43,7 +39,10 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+    const denied = requireAdminToken(request)
+    if (denied) return denied
+
     try {
         const info = await telegramBotService.getWebhookInfo()
         return NextResponse.json({

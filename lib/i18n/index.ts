@@ -1,18 +1,30 @@
 /**
  * i18n Dictionary Index
- * Centralized dictionary loading and management
- * 
- * To add a new language:
- * 1. Create a new file: lib/i18n/{lang}.ts
- * 2. Copy the structure from en.ts
- * 3. Translate all values
- * 4. Import and add to dictionaries object below
- * 
- * NO code changes needed - just add the dictionary file!
+ *
+ * Which languages exist is declared in lib/i18n/registry.ts, not here. This file
+ * only binds the dictionary modules to their codes; the registry decides what is
+ * offered, what has a voice, and what falls back to English.
+ *
+ * To add a language:
+ * 1. Add the entry to CURATED_LANGUAGES in registry.ts with dictionary: true
+ * 2. Create lib/i18n/{lang}.ts with the same keys as en.ts
+ * 3. Import and add it to `dictionaries` below
+ *
+ * `npm run test:i18n` fails if a language claims a dictionary it does not have,
+ * or has a dictionary missing keys that en.ts defines.
  */
+
+import { getLanguage, isRTLLanguage, resolveLanguage, DEFAULT_LANGUAGE } from './registry'
 
 import en from './en'
 import hi from './hi'
+import bn from './bn'
+import ta from './ta'
+import te from './te'
+import kn from './kn'
+import ml from './ml'
+import mr from './mr'
+import gu from './gu'
 import es from './es'
 import fr from './fr'
 import de from './de'
@@ -24,20 +36,22 @@ import ko from './ko'
 import zh from './zh'
 import ar from './ar'
 
-// RTL languages (add language codes here when adding RTL support)
-const RTL_LANGUAGES: string[] = ['ar'] // Currently none, but can add: 'ar', 'he', 'ur', 'fa'
-
 export type TranslationKey = keyof typeof en
 
 export interface Dictionary {
   [key: string]: string
 }
 
-// All language dictionaries
-// To add a new language: import it above and add it here
 export const dictionaries: Record<string, Dictionary> = {
   en,
   hi,
+  bn,
+  ta,
+  te,
+  kn,
+  ml,
+  mr,
+  gu,
   es,
   fr,
   de,
@@ -51,34 +65,46 @@ export const dictionaries: Record<string, Dictionary> = {
 }
 
 /**
- * Get translation for a key in the specified language
- * Falls back to English if key or language is missing
- * NEVER throws or fetches from network
+ * Get translation for a key in the specified language.
+ * Falls back to English if key or language is missing.
+ * NEVER throws or fetches from network.
  */
-export function getTranslation(key: TranslationKey, lang: string = 'en'): string {
-  // Always fallback to English if language not found
-  const dict = dictionaries[lang] ?? dictionaries.en
-  // Fallback to English if key not found in target language
-  return dict[key] ?? dictionaries.en[key] ?? key
+export function getTranslation(key: TranslationKey, lang: string = DEFAULT_LANGUAGE): string {
+  const dict = dictionaries[lang] ?? dictionaries[DEFAULT_LANGUAGE]
+  return dict[key] ?? dictionaries[DEFAULT_LANGUAGE][key] ?? key
 }
 
-/**
- * Check if language is RTL
- */
+/** Check if language is RTL. Delegates to the registry. */
 export function isRTL(lang: string): boolean {
-  return RTL_LANGUAGES.includes(lang)
+  return isRTLLanguage(lang)
 }
 
-/**
- * Get all supported language codes
- */
+/** Language codes that have a loaded dictionary. */
 export function getSupportedLanguages(): string[] {
   return Object.keys(dictionaries)
 }
 
-/**
- * Check if language is supported
- */
+/** True when a dictionary is actually loaded for this code. */
 export function isLanguageSupported(lang: string): boolean {
   return lang in dictionaries
 }
+
+export {
+  getLanguage,
+  resolveLanguage,
+  DEFAULT_LANGUAGE,
+}
+export {
+  LANGUAGES,
+  CURATED_LANGUAGES,
+  LONG_TAIL_LANGUAGES,
+  getDictionaryLanguages,
+  getSelectableLanguages,
+  getVoiceSpec,
+  hasVoice,
+  hasDictionary,
+  getUILanguage,
+  isSupportedLanguage,
+  type LanguageEntry,
+  type TTSVoiceSpec,
+} from './registry'

@@ -252,6 +252,8 @@ export default {
   // Subscription Plans
   'plan.basic': '베이직',
   'plan.basicDesc': '점성술 통찰력을 시작하기에 완벽함',
+  'plan.free': '무료',
+  'plan.freeDesc': '하루 2개의 질문으로 시작해 보세요',
   'plan.spark': '스파크',
   'plan.sparkDesc': '더 빠른 답변으로 향상된 경험',
   'plan.flame': '플레임',

@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdminToken } from '@/lib/auth/cron'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
@@ -34,12 +35,8 @@ async function sendToChannel(text: string, parseMode: 'Markdown' | 'HTML' = 'Mar
 // Post daily zodiac horoscopes to channel
 export async function POST(request: NextRequest) {
     try {
-        const authHeader = request.headers.get('Authorization')
-        const adminToken = process.env.ADMIN_API_TOKEN || 'whispering-palms-admin'
-
-        if (!authHeader || authHeader !== `Bearer ${adminToken}`) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
+        const denied = requireAdminToken(request)
+        if (denied) return denied
 
         const body = await request.json()
         const { type, content } = body
@@ -114,7 +111,10 @@ export async function POST(request: NextRequest) {
 }
 
 // Get sample content posts
-export async function GET() {
+export async function GET(request: NextRequest) {
+    const denied = requireAdminToken(request)
+    if (denied) return denied
+
     const samplePosts = [
         {
             type: 'spiritual_tip',

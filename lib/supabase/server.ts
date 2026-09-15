@@ -1,7 +1,16 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { isDevBypassEnabled, warnIfDevBypassActive } from '@/lib/dev/enabled'
+import { createDevSupabaseClient } from '@/lib/dev/supabase-stub'
 
 export async function createClient() {
+  // Local development with no Supabase project. See lib/dev/enabled.ts for the
+  // gates - this cannot activate in production or on any Vercel deployment.
+  if (isDevBypassEnabled()) {
+    warnIfDevBypassActive()
+    return createDevSupabaseClient()
+  }
+
   const cookieStore = await cookies()
 
   return createServerClient(

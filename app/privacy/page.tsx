@@ -131,7 +131,7 @@ export default function PrivacyPage() {
                                 <li>The right to export your data in a portable format</li>
                             </ul>
                             <p className="text-text-secondary leading-relaxed mt-4">
-                                To exercise any of these rights, please contact us at privacy@whisperingpalms.com.
+                                To exercise any of these rights, please contact us at privacy@whispering-palms.org.
                             </p>
                         </section>
 
@@ -167,7 +167,7 @@ export default function PrivacyPage() {
                             </p>
                             <div className="mt-4 p-6 bg-gold-50 rounded-lg border border-gold-200">
                                 <p className="text-text-primary font-semibold">Whispering Palms Privacy Team</p>
-                                <p className="text-text-secondary mt-2">Email: privacy@whisperingpalms.com</p>
+                                <p className="text-text-secondary mt-2">Email: privacy@whispering-palms.org</p>
                                 <p className="text-text-secondary">Address: [Your Business Address, City, Country]</p>
                             </div>
                         </section>

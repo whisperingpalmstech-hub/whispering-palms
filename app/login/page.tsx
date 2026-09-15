@@ -37,7 +37,15 @@ export default function LoginPage() {
         throw new Error(result.error?.message || t('auth.loginFailed'))
       }
 
-      router.push('/dashboard')
+      // Honor a post-login redirect (playback email links, protected-route
+      // bounces). Only same-app paths are allowed — never external URLs.
+      const params = new URLSearchParams(window.location.search)
+      const redirect = params.get('redirect')
+      const safeRedirect =
+        redirect && redirect.startsWith('/') && !redirect.startsWith('//')
+          ? redirect
+          : '/dashboard'
+      router.push(safeRedirect)
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : t('auth.loginFailed'))

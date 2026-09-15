@@ -3,44 +3,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from '@/app/contexts/TranslationContext'
-import { getSupportedLanguages, isLanguageSupported } from '@/lib/i18n/index'
+import { getDictionaryLanguages, isSupportedLanguage } from '@/lib/i18n/registry'
 
-interface Language {
-  code: string
-  name: string
-  nativeName: string
-}
-
-// Language metadata - matches supported languages in dictionaries
-const LANGUAGE_METADATA: Record<string, { name: string; nativeName: string }> = {
-  en: { name: 'English', nativeName: 'English' },
-  hi: { name: 'Hindi', nativeName: 'हिन्दी' },
-  es: { name: 'Spanish', nativeName: 'Español' },
-  fr: { name: 'French', nativeName: 'Français' },
-  de: { name: 'German', nativeName: 'Deutsch' },
-  it: { name: 'Italian', nativeName: 'Italiano' },
-  pt: { name: 'Portuguese', nativeName: 'Português' },
-  ru: { name: 'Russian', nativeName: 'Русский' },
-  ja: { name: 'Japanese', nativeName: '日本語' },
-  ko: { name: 'Korean', nativeName: '한국어' },
-  zh: { name: 'Chinese', nativeName: '中文' },
-  ar: { name: 'Arabic', nativeName: 'العربية' },
-}
-
-// Get supported languages from dictionaries
-function getSupportedLanguageList(): Language[] {
-  const supportedCodes = getSupportedLanguages()
-  return supportedCodes
-    .map(code => {
-      const meta = LANGUAGE_METADATA[code]
-      if (!meta) return null
-      return {
-        code,
-        name: meta.name,
-        nativeName: meta.nativeName,
-      }
-    })
-    .filter((lang): lang is Language => lang !== null)
+/**
+ * The offered languages come from lib/i18n/registry.ts - the single source of
+ * truth. This component previously kept its own list, which is how it drifted
+ * out of sync with the dictionaries, the settings dropdown and the TTS map.
+ */
+function getSupportedLanguageList() {
+  return getDictionaryLanguages()
 }
 
 export default function LanguageSwitcher() {
@@ -63,7 +34,7 @@ export default function LanguageSwitcher() {
     }
 
     // Validate language is supported
-    if (!isLanguageSupported(langCode)) {
+    if (!isSupportedLanguage(langCode)) {
       console.warn(`[LanguageSwitcher] Language ${langCode} is not supported, falling back to English`)
       langCode = 'en'
     }

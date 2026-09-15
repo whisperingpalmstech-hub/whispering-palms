@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireCronAuth } from '@/lib/auth/cron'
 import { telegramBotService } from '@/lib/services/telegram-bot'
 
 export const runtime = 'nodejs'
@@ -16,14 +17,10 @@ export const maxDuration = 300 // 5 minutes max
 
 export async function POST(request: NextRequest) {
     try {
-        // Verify cron secret
-        const authHeader = request.headers.get('Authorization')
-        const cronSecret = process.env.CRON_SECRET || process.env.ADMIN_API_TOKEN || 'whispering-palms-cron'
-
-        if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-            console.error('[Telegram Nurture Cron] Unauthorized request')
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
+        // Was falling back to a hardcoded 'whispering-palms-cron' string, which
+        // is in the source and therefore public. requireCronAuth has no default.
+        const denied = requireCronAuth(request)
+        if (denied) return denied
 
         console.log('[Telegram Nurture Cron] Starting nurturing campaign...')
 
@@ -47,10 +44,5 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export async function GET() {
-    return NextResponse.json({
-        endpoint: 'Nurturing Campaign Cron',
-        status: 'ready',
-        description: 'POST to this endpoint to trigger nurturing message delivery',
-    })
-}
+// GET handler removed: it was an unauthenticated status banner.
+// Use /api/health for liveness.

@@ -249,6 +249,8 @@ export default {
   // Subscription Plans - Spanish
   'plan.basic': 'Básico',
   'plan.basicDesc': 'Perfecto para comenzar con perspectivas astrológicas',
+  'plan.free': 'Gratis',
+  'plan.freeDesc': 'Pruébalo con 2 preguntas al día',
   'plan.spark': 'Chispa',
   'plan.sparkDesc': 'Experiencia mejorada con respuestas más rápidas',
   'plan.flame': 'Llama',
@@ -287,4 +289,10 @@ export default {
   // Common extras
   'common.readMore': 'Leer más',
   'common.showLess': 'Mostrar menos',
+
+  // Added to match en.ts
+  'palm.uploadTipsTitle': 'Consejos de Subida para Mejores Resultados',
+  'palm.tipContent': 'Coloca tu mano en una superficie plana con buena iluminación. Mantén tu palma abierta con los dedos extendidos naturalmente. Asegúrate de que todas las líneas principales (línea de vida, línea del corazón, línea de la cabeza) sean claramente visibles en la foto.',
+  'chat.typeYourQuestion': 'Escribe tu pregunta aquí...',
+  'chat.answerDeliveryNote': 'Tu respuesta se entregará por correo electrónico según tu plan de suscripción.',
 } as const

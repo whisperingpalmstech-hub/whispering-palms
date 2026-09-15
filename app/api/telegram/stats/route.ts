@@ -6,18 +6,14 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdminToken } from '@/lib/auth/cron'
 import { telegramBotService } from '@/lib/services/telegram-bot'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export async function GET(request: NextRequest) {
     try {
-        // Verify admin authorization
-        const authHeader = request.headers.get('Authorization')
-        const adminToken = process.env.ADMIN_API_TOKEN || 'whispering-palms-admin'
-
-        if (!authHeader || authHeader !== `Bearer ${adminToken}`) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
+        const denied = requireAdminToken(request)
+        if (denied) return denied
 
         const stats = await telegramBotService.getStats()
 

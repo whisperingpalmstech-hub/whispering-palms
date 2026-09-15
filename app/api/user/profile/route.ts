@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeCountry } from '@/lib/utils/countries'
 import { createClient } from '@/lib/supabase/server'
 import { createErrorResponse, createSuccessResponse } from '@/lib/utils/response'
 import { getAuthenticatedUser } from '@/lib/auth/get-user'
@@ -62,7 +63,7 @@ export async function PUT(request: NextRequest) {
     console.log('Request Body:', JSON.stringify(body, null, 2))
 
     // Validate required fields
-    const { date_of_birth, time_of_birth, place_of_birth, birth_timezone, consent_flags, name, gender } = body
+    const { date_of_birth, time_of_birth, place_of_birth, birth_timezone, consent_flags, name, gender, voice_gender, voice_speaking_rate } = body
 
     // Prepare profile data
     const profileData: any = {
@@ -77,6 +78,27 @@ export async function PUT(request: NextRequest) {
     if (place_of_birth !== undefined) profileData.place_of_birth = place_of_birth
     if (birth_timezone !== undefined) profileData.birth_timezone = birth_timezone
     if (consent_flags !== undefined) profileData.consent_flags = consent_flags
+
+    // Voice preferences. Clamped and validated here as well as by the database
+    // CHECK constraints, so a bad value fails as a 400 rather than a 500.
+    if (voice_gender !== undefined) {
+      if (voice_gender !== null && !['MALE', 'FEMALE', 'NEUTRAL'].includes(voice_gender)) {
+        return createErrorResponse('Voice gender must be MALE, FEMALE or NEUTRAL', 400)
+      }
+      profileData.voice_gender = voice_gender
+    }
+
+    if (voice_speaking_rate !== undefined) {
+      if (voice_speaking_rate === null) {
+        profileData.voice_speaking_rate = null
+      } else {
+        const rate = Number(voice_speaking_rate)
+        if (!Number.isFinite(rate) || rate < 0.25 || rate > 4) {
+          return createErrorResponse('Speaking rate must be between 0.25 and 4', 400)
+        }
+        profileData.voice_speaking_rate = rate
+      }
+    }
 
     console.log('Profile Data to Save:', JSON.stringify(profileData, null, 2))
 
@@ -104,7 +126,9 @@ export async function PUT(request: NextRequest) {
       }
 
       if (body.name !== undefined) userUpdateData.name = body.name
-      if (body.country !== undefined) userUpdateData.country = body.country
+      // Persist the ISO code. Anything unrecognised is stored as null rather
+      // than reintroducing free text that later lookups cannot match.
+      if (body.country !== undefined) userUpdateData.country = normalizeCountry(body.country)
       if (body.preferred_language !== undefined) userUpdateData.preferred_language = body.preferred_language
       if (body.timezone !== undefined) userUpdateData.timezone = body.timezone
 

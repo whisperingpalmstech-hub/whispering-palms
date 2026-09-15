@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
 import { createErrorResponse, createSuccessResponse } from '@/lib/utils/response'
+import { activatePlan, isPlanType } from '@/lib/services/plan-activation'
 
 /**
  * PUT /api/subscription/update
- * Update user's subscription plan (without payment for now)
+ *
+ * Downgrade path ONLY: an authenticated user may move themselves to the free
+ * `basic` plan (cancel). Upgrades to paid plans are NEVER granted here — they
+ * are activated server-side by the payment webhooks / verify routes after the
+ * provider confirms money changed hands. Previously any logged-in user could
+ * PUT {"planType":"superflame"} and receive unlimited quota for free.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -16,8 +22,18 @@ export async function PUT(request: NextRequest) {
 
     const { planType } = await request.json()
 
-    if (!planType || !['basic', 'spark', 'flame', 'superflame'].includes(planType)) {
+    if (!isPlanType(planType)) {
       return createErrorResponse('Invalid plan type. Must be: basic, spark, flame, or superflame', 400)
+    }
+
+    // Paid plans require a completed checkout. This endpoint only ever
+    // downgrades to the free plan; upgrades are activated by the payment
+    // webhooks and verify routes.
+    if (planType !== 'basic') {
+      return createErrorResponse(
+        'Paid plans require a completed checkout. Please subscribe via the pricing page.',
+        403
+      )
     }
 
     const supabase = await createClient()
@@ -33,84 +49,14 @@ export async function PUT(request: NextRequest) {
       return createErrorResponse('User profile not found. Please complete onboarding first.', 404)
     }
 
-    // Update subscription plan
-    const { error: updateError } = await supabase
-      .from('user_profiles')
-      .update({
-        subscription_plan: planType,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
-
-    if (updateError) {
-      console.error('Error updating subscription plan:', updateError)
+    // The plan itself is always 'basic' here (paid plans are rejected above),
+    // granted through the shared activation helper so quota math stays
+    // identical to webhook/verify activations.
+    try {
+      await activatePlan(supabase, user.id, planType)
+    } catch (error) {
+      console.error('Error updating subscription plan:', error)
       return createErrorResponse('Failed to update subscription plan', 500)
-    }
-
-    // Update or recreate daily quota for today with new plan
-    const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-    
-    // Get quota config for new plan
-    const quotaConfig: Record<string, number> = {
-      basic: parseInt(process.env.BASIC_MAX_QUESTIONS || '2', 10),
-      spark: parseInt(process.env.SPARK_MAX_QUESTIONS || '5', 10),
-      flame: parseInt(process.env.FLAME_MAX_QUESTIONS || '8', 10),
-      superflame: -1, // Unlimited
-    }
-    
-    const maxQuestions = quotaConfig[planType] === -1 ? 999999 : quotaConfig[planType]
-    
-    // Calculate reset time (midnight next day)
-    const resetAt = new Date()
-    resetAt.setHours(24, 0, 0, 0)
-    
-    // Check if quota exists for today
-    const { data: existingQuota } = await supabase
-      .from('daily_quotas')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('date', today)
-      .single()
-
-    if (existingQuota) {
-      // Update existing quota with new plan
-      const { error: quotaUpdateError } = await supabase
-        .from('daily_quotas')
-        .update({
-          plan_type: planType,
-          max_questions: maxQuestions,
-          // Reset remaining questions to max for new plan (or keep current if upgrading)
-          remaining_questions: Math.max(existingQuota.remaining_questions || 0, maxQuestions),
-          reset_at: resetAt.toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingQuota.id)
-
-      if (quotaUpdateError) {
-        console.error('Error updating daily quota:', quotaUpdateError)
-        // Don't fail the request, just log the error
-      } else {
-        console.log(`✅ Daily quota updated for plan change: ${planType}`)
-      }
-    } else {
-      // Create new quota for today with new plan
-      const { error: quotaCreateError } = await supabase
-        .from('daily_quotas')
-        .insert({
-          user_id: user.id,
-          date: today,
-          plan_type: planType,
-          max_questions: maxQuestions,
-          remaining_questions: maxQuestions,
-          reset_at: resetAt.toISOString(),
-        })
-
-      if (quotaCreateError) {
-        console.error('Error creating daily quota:', quotaCreateError)
-        // Don't fail the request, just log the error
-      } else {
-        console.log(`✅ Daily quota created for plan change: ${planType}`)
-      }
     }
 
     return createSuccessResponse({
