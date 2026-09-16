@@ -4,8 +4,6 @@
 
 import { PaymentProviderInterface, PaymentProvider, CreatePaymentIntentParams, CreateSubscriptionParams, PaymentIntent, Subscription } from './types'
 import { StripeProvider } from './providers/StripeProvider'
-import { RazorpayProvider } from './providers/RazorpayProvider'
-import { BitcoinProvider } from './providers/BitcoinProvider'
 
 export class PaymentService {
   private providers: Map<PaymentProvider, PaymentProviderInterface>
@@ -18,13 +16,7 @@ export class PaymentService {
       this.providers.set('stripe', new StripeProvider())
     }
     
-    if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-      this.providers.set('razorpay', new RazorpayProvider())
-    }
     
-    if (process.env.BITCOIN_ENABLED === 'true') {
-      this.providers.set('bitcoin', new BitcoinProvider())
-    }
   }
 
   /**
@@ -42,10 +34,8 @@ export class PaymentService {
    * Get default provider based on user preference or configuration
    */
   getDefaultProvider(): PaymentProvider {
-    // Priority: Stripe > Razorpay > Bitcoin
+    // Stripe is the only provider.
     if (this.providers.has('stripe')) return 'stripe'
-    if (this.providers.has('razorpay')) return 'razorpay'
-    if (this.providers.has('bitcoin')) return 'bitcoin'
     throw new Error('No payment provider is configured')
   }
 
@@ -134,10 +124,6 @@ export class PaymentService {
     switch (provider) {
       case 'stripe':
         return process.env.STRIPE_WEBHOOK_SECRET || ''
-      case 'razorpay':
-        return process.env.RAZORPAY_WEBHOOK_SECRET || ''
-      case 'bitcoin':
-        return process.env.BITCOIN_WEBHOOK_SECRET || ''
       default:
         throw new Error(`Unknown provider: ${provider}`)
     }

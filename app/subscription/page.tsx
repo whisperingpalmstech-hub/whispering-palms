@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Toast from '@/app/components/Toast'
 import LanguageSwitcher from '@/app/components/LanguageSwitcher'
-import CheckoutModal from '@/app/components/CheckoutModal'
 import { useI18n } from '@/app/hooks/useI18n'
 
 interface Plan {
@@ -288,10 +287,29 @@ export default function SubscriptionPage() {
       return
     }
 
-    // For paid plans, open checkout modal
-    const amount = billingCycle === 'yearly' ? plan.priceYearly : plan.priceMonthly
-    setSelectedPlan({ id: planId, amount })
-    setCheckoutOpen(true)
+    // Paid plans go to Stripe Checkout, which handles the card, 3DS and
+    // promotion codes (e.g. FREEMONTH) on Stripe's own hosted page. The plan
+    // is activated server-side by the webhook, never by this browser.
+    setUpdatingPlan(planId)
+    setLoading(true)
+    try {
+      const res = await fetch('/api/payments/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ planType: planId, billingPeriod: billingCycle }),
+      })
+      const body = await res.json()
+      if (!res.ok || !body?.url) {
+        showToast(body?.error || 'Could not start checkout. Please try again.', 'error')
+        return
+      }
+      window.location.href = body.url
+    } catch {
+      showToast('Could not reach checkout. Please try again.', 'error')
+    } finally {
+      setLoading(false)
+      setUpdatingPlan(null)
+    }
   }
 
   const updatePlanDirectly = async (planId: 'basic' | 'spark' | 'flame' | 'superflame') => {
@@ -334,8 +352,8 @@ export default function SubscriptionPage() {
   const handleCheckoutSuccess = async () => {
     if (!selectedPlan) return
 
-    // The plan is activated SERVER-side (/api/payments/verify for Razorpay,
-    // verify-session/webhook for Stripe) after the provider confirms payment.
+    // The plan is activated SERVER-side by the Stripe webhook after Stripe
+    // confirms payment.
     // This handler only reflects that state — it must never write the plan
     // itself, or anyone could grant themselves a paid plan for free.
     // Poll the quota endpoint briefly: webhooks can land a few seconds after
@@ -577,21 +595,6 @@ export default function SubscriptionPage() {
         </div>
       </div>
 
-      {/* Checkout Modal */}
-      {selectedPlan && (
-        <CheckoutModal
-          isOpen={checkoutOpen}
-          onClose={() => {
-            setCheckoutOpen(false)
-            setSelectedPlan(null)
-          }}
-          planType={selectedPlan.id as 'basic' | 'spark' | 'flame' | 'superflame'}
-          billingPeriod={billingCycle}
-          amount={selectedPlan.amount}
-          currency="USD"
-          onSuccess={handleCheckoutSuccess}
-        />
-      )}
 
       {/* Toast Notification */}
       <Toast

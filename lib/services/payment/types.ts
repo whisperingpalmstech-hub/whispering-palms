@@ -2,7 +2,8 @@
  * Unified payment service types and interfaces
  */
 
-export type PaymentProvider = 'stripe' | 'razorpay' | 'bitcoin'
+/** Stripe is the only payment provider. One platform, one webhook, one dashboard. */
+export type PaymentProvider = 'stripe'
 
 export type PaymentStatus = 
   | 'pending' 

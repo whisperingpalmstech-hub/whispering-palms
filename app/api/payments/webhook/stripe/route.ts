@@ -5,7 +5,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPaymentService } from '@/lib/services/payment/PaymentService'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { activatePlan, isPlanType, type PlanType } from '@/lib/services/plan-activation'
 import Stripe from 'stripe'
+
+/** Stripe metadata is free-form strings; never trust it as a plan name. */
+function planTypeOrBasic(value: unknown): PlanType {
+  return isPlanType(value) ? value : 'basic'
+}
 
 // No fallback key: a literal test key in the source is a secret in version
 // control, and it silently turns a misconfigured deploy into one that appears
@@ -146,29 +152,23 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription, supa
       onConflict: 'provider_subscription_id,provider',
     })
 
-  // Update user profile
-  await supabase
-    .from('user_profiles')
-    .update({
-      subscription_plan: subscription.metadata.planType || 'basic',
-    })
-    .eq('user_id', userId)
+  // Reconcile the daily quota too, not just the plan name. Writing
+  // subscription_plan alone leaves daily_quotas on the old tier, so a user who
+  // just paid keeps the free question limit until the next nightly reset.
+  await activatePlan(supabase, userId, planTypeOrBasic(subscription.metadata.planType))
 }
 
 async function handleCheckoutSessionCompleted(session: Stripe.Checkout.Session, supabase: any) {
   const metadata = session.metadata || {}
   const userId = metadata.userId || session.client_reference_id
-  const planType = metadata.planType || 'basic'
+  const planType = planTypeOrBasic(metadata.planType)
 
   if (!userId) return
 
-  // Update user profile
-  await supabase
-    .from('user_profiles')
-    .update({
-      subscription_plan: planType,
-    })
-    .eq('user_id', userId)
+  // activatePlan writes the plan AND resizes today's quota. Updating
+  // subscription_plan on its own would leave the user on free-tier questions
+  // immediately after paying.
+  await activatePlan(supabase, userId, planType)
 
   // Track the transaction
   await supabase.from('transactions').insert({

@@ -5,8 +5,6 @@
  * has independently verified money changed hands:
  *   - Stripe: webhook (checkout.session.completed / subscription events)
  *             or verify-session (Stripe session retrieved server-side)
- *   - Razorpay: /api/payments/verify (HMAC signature checked server-side)
- *                 or the Razorpay webhook (payment.captured)
  *
  * The old flow called PUT /api/subscription/update straight from the browser
  * after checkout, which meant anyone could grant themselves Superflame with a
