@@ -73,20 +73,33 @@ function normaliseLine(raw: any): AnalysedLine {
 /**
  * Analyse a palm photograph. Returns null when no vision provider is
  * configured, so callers fall back rather than fabricating a reading.
+ *
+ * DeepSeek by default: `deepseek-flash` is vision-capable and the account
+ * has credit, so one provider serves both the reading and the photo
+ * analysis. OPENROUTER_API_KEY still works as an override.
  */
 export async function analysePalmPhoto(
   imageUrl: string
 ): Promise<PalmAnalysisFull | null> {
-  const apiKey = process.env.OPENROUTER_API_KEY
-  const model = process.env.PALM_VISION_MODEL || 'google/gemini-2.5-flash-image'
+  const deepseekKey = process.env.DEEPSEEK_API_KEY
+  const openrouterKey = process.env.OPENROUTER_API_KEY
+
+  const useDeepseek = !!deepseekKey
+  const apiKey = useDeepseek ? deepseekKey : openrouterKey
+  const endpoint = useDeepseek
+    ? 'https://api.deepseek.com/chat/completions'
+    : 'https://openrouter.ai/api/v1/chat/completions'
+  const model = useDeepseek
+    ? (process.env.PALM_VISION_MODEL || 'deepseek-flash')
+    : (process.env.PALM_VISION_MODEL || 'google/gemini-2.5-flash-image')
 
   if (!apiKey) {
-    console.warn('[PalmAnalysis] OPENROUTER_API_KEY not set — skipping photo analysis.')
+    console.warn('[PalmAnalysis] No vision provider key set — skipping photo analysis.')
     return null
   }
 
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -101,7 +114,10 @@ export async function analysePalmPhoto(
             { type: 'image_url', image_url: { url: imageUrl } },
           ],
         }],
-        max_tokens: 2000,
+        // Generous: deepseek-flash spends tokens on reasoning before it
+        // emits the answer, and a tight cap returns an EMPTY completion
+        // (finish_reason "length") rather than an error.
+        max_tokens: 8000,
       }),
     })
 

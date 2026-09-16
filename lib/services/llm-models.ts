@@ -34,30 +34,37 @@ export interface ModelOption {
  */
 export const MODEL_OPTIONS: ModelOption[] = [
   {
+    provider: 'deepseek',
+    model: 'deepseek-flash',
+    note: 'Default. The DeepSeek account has credit and this model is vision-capable, so the same provider serves readings and palm-photo analysis. Verified 3/3 on the app prompt contract: correct [ENGLISH_START]/[LOCAL_START] tags and real Devanagari, ~6s.',
+  },
+  {
     provider: 'groq',
     model: 'openai/gpt-oss-120b',
-    note: 'Default. Best reading quality; reliably emits the [ENGLISH_START]/[LOCAL_START] tags and correct Devanagari. ~2s typical.',
+    note: 'Fallback. Format-compliant and fast (~2s). Use if DeepSeek is degraded.',
   },
   {
     provider: 'groq',
     model: 'qwen/qwen3.8-27b',
-    note: 'Comparable quality and format compliance. Good fallback.',
+    note: 'Fallback. Comparable quality and format compliance.',
   },
   {
     provider: 'groq',
     model: 'openai/gpt-oss-20b',
     note: 'Smaller and cheaper; format compliant, slightly shallower readings.',
   },
-  {
-    provider: 'groq',
-    model: 'openai/gpt-oss-safeguard-20b',
-    note: 'Safety-tuned 20b. Use if reading content needs tighter guardrails.',
-  },
 ]
+
+/**
+ * deepseek-v4-pro is deliberately NOT offered. It is a reasoning model that
+ * spends its whole completion budget on reasoning tokens for this prompt and
+ * returns an EMPTY answer (finish_reason "length", 8000/8000 reasoning
+ * tokens). deepseek-flash reasons too but still emits the answer.
+ */
 
 /** Providers whose credentials are present but NOT usable, with the observed error. */
 export const KNOWN_BROKEN = [
-  { provider: 'deepseek', reason: 'API rejects every model id (v4-flash, chat, reasoner): "not valid for chat completion"' },
+  { provider: 'deepseek/deepseek-v4-flash', reason: 'model id does not exist; the real ids are deepseek-flash and deepseek-v4-pro' },
   { provider: 'gemini', reason: 'key present but returns HTTP 400' },
   { provider: 'mistral', reason: 'returns HTTP 403/429 (no quota)' },
 ]
