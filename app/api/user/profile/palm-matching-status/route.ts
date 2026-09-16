@@ -43,16 +43,35 @@ export async function GET(request: NextRequest) {
     const hasRequiredPalms = rightFront && leftFront
     const hasAllPalms = rightFront && leftFront && rightSide && leftSide
 
-    // Determine overall status
+    // Determine overall status.
+    //
+    // The matching result is only meaningful for the images it was computed
+    // from. Previously this returned matchingResult.status unconditionally,
+    // so a user who re-uploaded and got two `flagged` images still saw
+    // "verified" from a stale result row — the badge did not describe the
+    // palms actually on file. Freshly uploaded images therefore take
+    // precedence over an older verdict.
+    const currentRequired = [rightFront, leftFront].filter(Boolean) as typeof palmImages
+    const flaggedRequired = currentRequired.filter(img => img.matching_status === 'flagged')
+    const pendingRequired = currentRequired.filter(img => img.matching_status === 'pending')
+
+    const matchingIsStale =
+      !!matchingResult &&
+      currentRequired.some(img => new Date(img.uploaded_at) > new Date(matchingResult.matched_at))
+
     let overallStatus = 'incomplete'
     if (!hasRequiredPalms) {
       overallStatus = 'incomplete'
+    } else if (flaggedRequired.length > 0) {
+      // Low-confidence uploads need re-taking, regardless of any past result.
+      overallStatus = 'flagged'
+    } else if (pendingRequired.length > 0 || matchingIsStale) {
+      // Uploaded but not yet matched (or matched before the current images).
+      overallStatus = 'pending'
     } else if (matchingResult) {
       overallStatus = matchingResult.status
     } else {
-      // Check if any images are pending matching
-      const pendingImages = palmImages.filter(img => img.matching_status === 'pending')
-      overallStatus = pendingImages.length > 0 ? 'pending' : 'ready'
+      overallStatus = 'ready'
     }
 
     return createSuccessResponse({
@@ -61,6 +80,10 @@ export async function GET(request: NextRequest) {
       hasAllPalms,
       palmImages,
       matchingResult: matchingResult || null,
+      // True when the stored result predates the current images, so the UI
+      // can prompt a re-run instead of showing a stale verdict.
+      matchingIsStale,
+      needsReupload: flaggedRequired.map(img => img.palm_type),
       progress: {
         rightFront: !!rightFront,
         leftFront: !!leftFront,

@@ -60,16 +60,34 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // --- ENTERPRISE VALIDATION GATE ---
-    // Validate if the image is actually a palm and not a mobile phone/object
+    // --- VALIDATION GATE ---
+    // Two layers, so this can never fail open:
+    //   1. Google Vision when credentials exist (best signal).
+    //   2. A local sharp-based check otherwise (the floor).
+    //
+    // This gate used to call Vision alone, and Vision returns
+    // "validation skipped -> isValid: true" when unconfigured. It has never
+    // been configured on the deployed app, so a solid blue square uploaded
+    // successfully as a palm. Verified by test.
     const { validateIsPalm } = await import('@/lib/services/vision-api')
     const validation = await validateIsPalm(buffer, palmType)
 
-    if (!validation.isValid) {
-      return createErrorResponse(
-        validation.message,
-        400
-      )
+    let effectiveConfidence = validation.confidence
+    const visionSkipped = /not configured|skipped/i.test(validation.message || '')
+
+    if (!validation.isValid && !visionSkipped) {
+      return createErrorResponse(validation.message, 400)
+    }
+
+    if (visionSkipped) {
+      const { checkLooksLikePalm } = await import('@/lib/services/palm-local-check')
+      const local = await checkLooksLikePalm(buffer)
+      console.log('[Upload] Vision unavailable; local palm check:', JSON.stringify(local.signals))
+
+      if (!local.isValid) {
+        return createErrorResponse(local.reason, 400)
+      }
+      effectiveConfidence = local.confidence
     }
     // --- END VALIDATION GATE ---
 
@@ -111,8 +129,8 @@ export async function POST(request: NextRequest) {
         file_size: file.size,
         width: width, // Validated dimensions
         height: height, // Validated dimensions
-        matching_status: validation.confidence > 0.8 ? 'pending' : 'flagged', // Mark as flagged if confidence is low
-        matching_score: validation.confidence, // Store vision confidence initially
+        matching_status: effectiveConfidence > 0.8 ? 'pending' : 'flagged', // Mark as flagged if confidence is low
+        matching_score: effectiveConfidence, // Store validation confidence initially
         uploaded_at: new Date().toISOString(),
       })
       .select()
@@ -129,8 +147,31 @@ export async function POST(request: NextRequest) {
       .from('palm-images')
       .createSignedUrl(storagePath, 3600)
 
-    // Don't trigger matching here - let client handle it
-    // This allows user to see matching status immediately and re-upload if needed
+    // Run palm matching now that a new image exists.
+    //
+    // This used to be left to the client ("let client handle it"), and the
+    // client never called it — every upload sat at its initial status
+    // forever, so the dashboard showed a verification verdict that did not
+    // correspond to the images on file. Non-blocking: a matching failure
+    // must not fail the upload, it just leaves the image pending.
+    try {
+      const matchResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/palm-matching/match`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Cookie: request.headers.get('cookie') || '',
+          },
+          body: JSON.stringify({}),
+        }
+      )
+      if (!matchResponse.ok) {
+        console.warn('[Upload] Palm matching returned', matchResponse.status)
+      }
+    } catch (matchError) {
+      console.warn('[Upload] Palm matching could not be run:', matchError)
+    }
 
     // Sync context to AnythingLLM workspace (non-blocking)
     try {

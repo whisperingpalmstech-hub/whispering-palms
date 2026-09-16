@@ -4,6 +4,7 @@
  */
 
 import { ImageAnnotatorClient } from '@google-cloud/vision'
+import { existsSync } from 'fs'
 import type { PalmImage } from './user-context'
 
 /**
@@ -14,35 +15,47 @@ import type { PalmImage } from './user-context'
  */
 function getVisionClient(): ImageAnnotatorClient | null {
   try {
-    // Option 1: Service account JSON file path
+    // Option 1: Service account JSON file path.
+    // Only usable if the file actually exists — GOOGLE_APPLICATION_CREDENTIALS
+    // has been seen pointing at a Windows path (C:\secrets\...) that cannot
+    // exist on Linux or Vercel. Constructing the client with a missing
+    // keyFilename does not throw here; it throws later on first use, which
+    // previously surfaced as "validation skipped" and let anything through.
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-      console.log('[Vision API] Using credentials from:', process.env.GOOGLE_APPLICATION_CREDENTIALS)
-      const client = new ImageAnnotatorClient({
-        keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-      })
-      console.log('[Vision API] Client initialized successfully')
-      return client
+      const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+      if (existsSync(keyPath)) {
+        console.log('[Vision API] Using credentials file:', keyPath)
+        return new ImageAnnotatorClient({ keyFilename: keyPath })
+      }
+      console.error(
+        `[Vision API] GOOGLE_APPLICATION_CREDENTIALS points at "${keyPath}", which does not exist on this host. ` +
+        'Set GOOGLE_SERVICE_ACCOUNT_JSON (inline JSON) instead for serverless deploys.'
+      )
     }
 
-    // Option 2: Service account JSON as string
+    // Option 2: Service account JSON as an inline string (works on Vercel).
     if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
       console.log('[Vision API] Using credentials from GOOGLE_SERVICE_ACCOUNT_JSON')
       const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
-      const client = new ImageAnnotatorClient({
-        credentials,
-      })
-      console.log('[Vision API] Client initialized successfully')
-      return client
+      return new ImageAnnotatorClient({ credentials })
     }
 
-    // Option 3: Try default credentials (if running on GCP or with gcloud auth)
-    console.log('[Vision API] No credentials found, trying default...')
-    try {
-      return new ImageAnnotatorClient()
-    } catch {
-      console.warn('[Vision API] No default credentials available')
-      return null
+    // Option 3: Application Default Credentials (GCP metadata server, or a
+    // local `gcloud auth application-default login`). Only attempt this when
+    // something suggests ADC is actually present, otherwise the client is
+    // constructed successfully and fails on first call.
+    if (process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT) {
+      console.log('[Vision API] Trying application default credentials...')
+      try {
+        return new ImageAnnotatorClient()
+      } catch {
+        console.warn('[Vision API] No default credentials available')
+        return null
+      }
     }
+
+    console.warn('[Vision API] No credentials configured.')
+    return null
   } catch (error) {
     console.error('[Vision API] Error initializing client:', error)
     return null
