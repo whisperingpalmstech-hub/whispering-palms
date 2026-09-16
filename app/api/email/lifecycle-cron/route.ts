@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createErrorResponse, createSuccessResponse } from '@/lib/utils/response'
 import { sendEmail } from '@/lib/services/email-sender'
+import { requireCronAuth } from '@/lib/auth/cron'
 
 // Type definitions for the campaigns
 type CampaignType = 'onboarding_reminders' | 'first_question_reminders' | 'limit_exhausted_reminders'
@@ -25,8 +26,21 @@ interface LifecycleUser {
 }
 
 export async function GET(request: NextRequest) {
+    // Machine endpoint: same gate as /api/email/cron. Without this anyone
+    // could call it repeatedly and blast the entire user base with lifecycle
+    // marketing email, burning the send quota and the sending domain's
+    // reputation.
+    const denied = requireCronAuth(request)
+    if (denied) return denied
+
     try {
-        const supabase = await createClient()
+        // Service role, not the anon client. `user_lifecycle_state` is a view
+        // over users/user_profiles/palm_images/daily_quotas; migration 006 set
+        // security_invoker on it so it no longer bypasses RLS, which means the
+        // anon role now correctly reads ZERO rows through it — this job would
+        // silently report "No users found" forever. A machine job that
+        // legitimately crosses every user needs the service role.
+        const supabase = createAdminClient()
         const now = new Date()
         let emailsSent = 0
         const errors: string[] = []
