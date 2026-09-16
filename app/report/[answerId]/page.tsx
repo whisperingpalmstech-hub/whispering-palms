@@ -24,15 +24,24 @@ interface Line {
   observation?: string
 }
 
+/**
+ * The stored analysis, as produced by lib/services/palm-analysis.ts.
+ *
+ * Field names are camelCase because that is what analysePalmPhoto() returns
+ * and what is persisted in answers.palm_analysis — NOT the snake_case of the
+ * model's raw JSON. Reading the wrong casing here silently renders every
+ * value as an em dash.
+ */
 interface Analysis {
+  palmDetected?: boolean
   hand?: string
-  image_quality?: string
-  palm_shape?: string
-  finger_length?: string
-  index_vs_ring?: string
+  imageQuality?: string
+  palmShape?: string
+  fingerLength?: string
+  indexVsRing?: string
   lines?: Record<string, Line>
   mounts?: Record<string, string>
-  special_marks?: string[]
+  specialMarks?: string[]
   confidence?: string
 }
 
@@ -154,10 +163,10 @@ export default function ReportPage({ params }: { params: Promise<{ answerId: str
               <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                 {[
                   ['Palm', palmLabel],
-                  ['Photo quality', titleCase(primary?.image_quality)],
-                  ['Palm shape', titleCase(primary?.palm_shape)],
-                  ['Finger length', titleCase(primary?.finger_length)],
-                  ['Index vs ring', titleCase(primary?.index_vs_ring)],
+                  ['Photo quality', titleCase(primary?.imageQuality)],
+                  ['Palm shape', titleCase(primary?.palmShape)],
+                  ['Finger length', titleCase(primary?.fingerLength)],
+                  ['Index vs ring', titleCase(primary?.indexVsRing)],
                   ['Lines visible', `${visibleCount} of 4`],
                 ].map(([label, value]) => (
                   <div key={label}>
@@ -166,8 +175,8 @@ export default function ReportPage({ params }: { params: Promise<{ answerId: str
                   </div>
                 ))}
               </div>
-              {primary?.palm_shape && PALM_SHAPE_NOTE[primary.palm_shape] && (
-                <p className="text-sm text-text-secondary mt-4">{PALM_SHAPE_NOTE[primary.palm_shape]}</p>
+              {primary?.palmShape && PALM_SHAPE_NOTE[primary.palmShape] && (
+                <p className="text-sm text-text-secondary mt-4">{PALM_SHAPE_NOTE[primary.palmShape]}</p>
               )}
               {primary?.confidence && (
                 <div className="mt-4 bg-gold-50 border-l-4 border-gold-500 rounded px-4 py-3 text-sm text-text-secondary">
