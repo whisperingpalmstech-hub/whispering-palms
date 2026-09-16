@@ -7,6 +7,7 @@ import {
   traceLinesOnPhoto,
   verifyTrace,
 } from '@/lib/services/palm-trace'
+import { traceLinesWithOpenAI } from '@/lib/services/palm-trace-openai'
 
 export const maxDuration = 120
 
@@ -89,7 +90,15 @@ export async function GET(request: NextRequest) {
 
     const croppedUri = `data:image/jpeg;base64,${cropped.toString('base64')}`
 
-    const tracedB64 = await traceLinesOnPhoto(croppedUri)
+    // OpenAI's image-edit models preserve the photograph and draw the
+    // cleanest strokes, so they are preferred when a key is present.
+    // OpenRouter remains the fallback.
+    const tracedB64 = process.env.OPENAI_API_KEY
+      ? await traceLinesWithOpenAI(cropped, {
+          fileName: 'palm.jpg',
+          contentType: 'image/jpeg',
+        })
+      : await traceLinesOnPhoto(croppedUri)
     const traced = Buffer.from(tracedB64, 'base64')
 
     const headers: Record<string, string> = {
