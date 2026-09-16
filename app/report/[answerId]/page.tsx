@@ -99,23 +99,26 @@ export default function ReportPage({ params }: { params: Promise<{ answerId: str
     )
   }
 
-  const primaryPalm = report.palms[0]
-  const primary = primaryPalm?.analysis
+  // Both palms are analysed and both feed the reading, so the report shows
+  // both. Previously only palms[0] was rendered while the reading said things
+  // like "the long head line on one hand and the clear head line on the
+  // other" — citing evidence the page never showed.
+  const orderedPalms = [...report.palms].sort((a, b) =>
+    // Right palm first: in palmistry the dominant hand is read as the active
+    // life, and most users are right-handed. Deterministic either way.
+    a.palmType === b.palmType ? 0 : a.palmType?.startsWith('right') ? -1 : 1
+  )
   const lineKeys: LineKey[] = ['heart', 'head', 'life', 'fate']
-  const visibleCount = primary?.lines
-    ? lineKeys.filter((k) => primary.lines?.[k]?.present).length
-    : 0
 
-  // Label the palm by what the USER filed it as, not by the model's own
-  // left/right guess. Those two disagree in practice (a palm photo is easy to
-  // mirror, and the model reads orientation from the image alone), and
-  // showing "right hand" on a photo the user uploaded as their left reads as
-  // broken. The upload label is the fact we actually know.
-  const palmLabel = primaryPalm?.palmType?.startsWith('left')
-    ? 'Left palm'
-    : primaryPalm?.palmType?.startsWith('right')
-      ? 'Right palm'
-      : '—'
+  const labelFor = (palmType?: string) =>
+    palmType?.startsWith('left')
+      ? 'Left palm'
+      : palmType?.startsWith('right')
+        ? 'Right palm'
+        : 'Palm'
+
+  const visibleIn = (a?: Analysis) =>
+    a?.lines ? lineKeys.filter((k) => a.lines?.[k]?.present).length : 0
 
   return (
     <main className="min-h-screen bg-beige-100 py-8 px-4 sm:px-6">
@@ -155,120 +158,130 @@ export default function ReportPage({ params }: { params: Promise<{ answerId: str
           </section>
         ) : (
           <>
-            {/* At a glance */}
-            <section className="bg-white border border-beige-300 rounded-2xl p-6 sm:p-7 mb-6">
-              <h2 className="text-xl font-serif text-text-primary border-b-2 border-gold-400 inline-block pb-1 mb-4">
-                At a glance
-              </h2>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-                {[
-                  ['Palm', palmLabel],
-                  ['Photo quality', titleCase(primary?.imageQuality)],
-                  ['Palm shape', titleCase(primary?.palmShape)],
-                  ['Finger length', titleCase(primary?.fingerLength)],
-                  ['Index vs ring', titleCase(primary?.indexVsRing)],
-                  ['Lines visible', `${visibleCount} of 4`],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <span className="block text-[10px] tracking-[2px] uppercase text-text-secondary">{label}</span>
-                    <b className="font-normal text-text-primary">{value || '—'}</b>
-                  </div>
-                ))}
-              </div>
-              {primary?.palmShape && PALM_SHAPE_NOTE[primary.palmShape] && (
-                <p className="text-sm text-text-secondary mt-4">{PALM_SHAPE_NOTE[primary.palmShape]}</p>
-              )}
-              {primary?.confidence && (
-                <div className="mt-4 bg-gold-50 border-l-4 border-gold-500 rounded px-4 py-3 text-sm text-text-secondary">
-                  <b className="text-text-primary font-semibold">Confidence: {titleCase(primary.confidence)}.</b>{' '}
-                  {CONFIDENCE_NOTE[primary.confidence]}
-                </div>
-              )}
-            </section>
+            {orderedPalms.map((palm, palmIndex) => {
+              const a = palm.analysis
+              return (
+                <div key={palm.palmType || palmIndex} className="mb-8">
+                  <h2 className="text-2xl font-serif text-text-primary mb-4">
+                    {labelFor(palm.palmType)}
+                  </h2>
 
-            {/* Lines */}
-            <section className="mb-6">
-              <h2 className="text-xl font-serif text-text-primary mb-4">The four major lines</h2>
-              <div className="space-y-4">
-                {lineKeys.map((key) => {
-                  const meta = LINE_META[key]
-                  const line = primary?.lines?.[key]
-                  const present = !!line?.present
-                  return (
-                    <div
-                      key={key}
-                      className={`bg-white border border-beige-300 rounded-2xl p-5 sm:p-6 ${present ? '' : 'opacity-75'}`}
-                    >
-                      <div className="flex items-center gap-3 mb-3">
-                        <span
-                          className="w-3.5 h-3.5 rounded-full flex-shrink-0"
-                          style={{ background: meta.colour }}
-                        />
-                        <div>
-                          <h3 className="text-lg font-serif text-text-primary leading-tight">{meta.title}</h3>
-                          <p className="text-xs text-text-secondary">{meta.tagline}</p>
+                  {/* At a glance */}
+                  <section className="bg-white border border-beige-300 rounded-2xl p-6 sm:p-7 mb-5">
+                    <h3 className="text-lg font-serif text-text-primary border-b-2 border-gold-400 inline-block pb-1 mb-4">
+                      At a glance
+                    </h3>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+                      {[
+                        ['Photo quality', titleCase(a?.imageQuality)],
+                        ['Palm shape', titleCase(a?.palmShape)],
+                        ['Finger length', titleCase(a?.fingerLength)],
+                        ['Index vs ring', titleCase(a?.indexVsRing)],
+                        ['Lines visible', `${visibleIn(a)} of 4`],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <span className="block text-[10px] tracking-[2px] uppercase text-text-secondary">{label}</span>
+                          <b className="font-normal text-text-primary">{value || '—'}</b>
                         </div>
+                      ))}
+                    </div>
+                    {a?.palmShape && PALM_SHAPE_NOTE[a.palmShape] && (
+                      <p className="text-sm text-text-secondary mt-4">{PALM_SHAPE_NOTE[a.palmShape]}</p>
+                    )}
+                    {a?.confidence && (
+                      <div className="mt-4 bg-gold-50 border-l-4 border-gold-500 rounded px-4 py-3 text-sm text-text-secondary">
+                        <b className="text-text-primary font-semibold">Confidence: {titleCase(a.confidence)}.</b>{' '}
+                        {CONFIDENCE_NOTE[a.confidence]}
                       </div>
+                    )}
+                  </section>
 
-                      {present ? (
-                        <>
-                          <div className="flex flex-wrap gap-2 mb-3">
-                            {[line?.length && `${line.length} length`, line?.depth && `${line.depth} depth`, line?.clarity, line?.curve?.replace(/_/g, ' ')]
-                              .filter(Boolean)
-                              .map((chip) => (
-                                <span
-                                  key={String(chip)}
-                                  className="text-xs px-2.5 py-1 rounded-full border capitalize"
-                                  style={{ borderColor: meta.colour, color: '#3b342c' }}
-                                >
-                                  {chip}
-                                </span>
-                              ))}
+                  {/* Lines */}
+                  <section className="mb-5">
+                    <h3 className="text-lg font-serif text-text-primary mb-3">The four major lines</h3>
+                    <div className="space-y-4">
+                      {lineKeys.map((key) => {
+                        const meta = LINE_META[key]
+                        const line = a?.lines?.[key]
+                        const present = !!line?.present
+                        return (
+                          <div
+                            key={key}
+                            className={`bg-white border border-beige-300 rounded-2xl p-5 sm:p-6 ${present ? '' : 'opacity-75'}`}
+                          >
+                            <div className="flex items-center gap-3 mb-3">
+                              <span
+                                className="w-3.5 h-3.5 rounded-full flex-shrink-0"
+                                style={{ background: meta.colour }}
+                              />
+                              <div>
+                                <h4 className="text-lg font-serif text-text-primary leading-tight">{meta.title}</h4>
+                                <p className="text-xs text-text-secondary">{meta.tagline}</p>
+                              </div>
+                            </div>
+
+                            {present ? (
+                              <>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                  {[line?.length && `${line.length} length`, line?.depth && `${line.depth} depth`, line?.clarity, line?.curve?.replace(/_/g, ' ')]
+                                    .filter(Boolean)
+                                    .map((chip) => (
+                                      <span
+                                        key={String(chip)}
+                                        className="text-xs px-2.5 py-1 rounded-full border capitalize"
+                                        style={{ borderColor: meta.colour, color: '#3b342c' }}
+                                      >
+                                        {chip}
+                                      </span>
+                                    ))}
+                                </div>
+                                {line?.observation && (
+                                  <p className="text-sm text-text-primary mb-2">
+                                    <b className="font-semibold">What we saw:</b> {line.observation}
+                                  </p>
+                                )}
+                                {meaningsFor(key, line || {}).length > 0 && (
+                                  <p className="text-sm text-text-secondary italic">
+                                    {meaningsFor(key, line || {}).join(' ')}
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <p className="text-sm text-text-secondary">{ABSENT_NOTE[key]}</p>
+                            )}
                           </div>
-                          {line?.observation && (
-                            <p className="text-sm text-text-primary mb-2">
-                              <b className="font-semibold">What we saw:</b> {line.observation}
-                            </p>
-                          )}
-                          {meaningsFor(key, line || {}).length > 0 && (
-                            <p className="text-sm text-text-secondary italic">
-                              {meaningsFor(key, line || {}).join(' ')}
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-sm text-text-secondary">{ABSENT_NOTE[key]}</p>
-                      )}
+                        )
+                      })}
                     </div>
-                  )
-                })}
-              </div>
-            </section>
+                  </section>
 
-            {/* Mounts */}
-            {primary?.mounts && Object.keys(primary.mounts).length > 0 && (
-              <section className="bg-white border border-beige-300 rounded-2xl p-6 sm:p-7 mb-6">
-                <h2 className="text-xl font-serif text-text-primary border-b-2 border-gold-400 inline-block pb-1 mb-3">
-                  Mounts
-                </h2>
-                <p className="text-sm text-text-secondary mb-4">
-                  The fleshy pads of the palm. Tradition links each to a quality — a well-developed mount is read as that quality being strong.
-                </p>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {Object.entries(primary.mounts).map(([k, v]) => (
-                    <div key={k} className="flex items-baseline justify-between bg-beige-100 rounded-lg px-3 py-2.5">
-                      <div>
-                        <span className="text-sm text-text-primary">{MOUNT_LABEL[k] || k}</span>
-                        <span className="block text-[11px] text-text-secondary">{MOUNT_QUALITY[k]}</span>
+                  {/* Mounts */}
+                  {a?.mounts && Object.keys(a.mounts).length > 0 && (
+                    <section className="bg-white border border-beige-300 rounded-2xl p-6 sm:p-7">
+                      <h3 className="text-lg font-serif text-text-primary border-b-2 border-gold-400 inline-block pb-1 mb-3">
+                        Mounts
+                      </h3>
+                      <p className="text-sm text-text-secondary mb-4">
+                        The fleshy pads of the palm. Tradition links each to a quality — a well-developed mount is read as that quality being strong.
+                      </p>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {Object.entries(a.mounts).map(([k, v]) => (
+                          <div key={k} className="flex items-baseline justify-between bg-beige-100 rounded-lg px-3 py-2.5">
+                            <div>
+                              <span className="text-sm text-text-primary">{MOUNT_LABEL[k] || k}</span>
+                              <span className="block text-[11px] text-text-secondary">{MOUNT_QUALITY[k]}</span>
+                            </div>
+                            <b className={`text-sm font-normal ${v === 'prominent' ? 'text-gold-700' : 'text-text-secondary'}`}>
+                              {MOUNT_STATE[v] || v}
+                            </b>
+                          </div>
+                        ))}
                       </div>
-                      <b className={`text-sm font-normal ${v === 'prominent' ? 'text-gold-700' : 'text-text-secondary'}`}>
-                        {MOUNT_STATE[v] || v}
-                      </b>
-                    </div>
-                  ))}
+                    </section>
+                  )}
                 </div>
-              </section>
-            )}
+              )
+            })}
           </>
         )}
 
