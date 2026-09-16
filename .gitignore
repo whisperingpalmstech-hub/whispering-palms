@@ -25,8 +25,12 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
+# Both forms: the bare `env.local` (no leading dot) is a real file in this
+# repo and was NOT matched by `.env*.local`, so it got committed once.
 .env*.local
 .env
+env.local
+env.*.local
 
 # vercel
 .vercel
