@@ -84,12 +84,19 @@ function resolveSmtpConfig(provider: EmailProvider) {
       }
     case 'zoho':
       return {
-        host: process.env.SMTP_HOST || 'smtp.zoho.com',
-        port: parseInt(process.env.SMTP_PORT || '465', 10),
+        // ZOHO_MAIL_HOST matters: Zoho is region-partitioned and an EU
+        // mailbox will not authenticate against smtp.zoho.com. The config
+        // sets ZOHO_MAIL_HOST=smtp.zoho.eu, which was previously ignored
+        // here, so every send silently went to the wrong region.
+        host:
+          process.env.SMTP_HOST ||
+          process.env.ZOHO_MAIL_HOST ||
+          'smtp.zoho.com',
+        port: parseInt(process.env.SMTP_PORT || process.env.ZOHO_MAIL_PORT || '465', 10),
         secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : true,
         user: process.env.SMTP_USER || process.env.ZOHO_MAIL_USER,
         pass: process.env.SMTP_PASSWORD || process.env.ZOHO_MAIL_PASSWORD,
-        missingHint: 'Set ZOHO_MAIL_USER and ZOHO_MAIL_PASSWORD.',
+        missingHint: 'Set ZOHO_MAIL_USER and ZOHO_MAIL_PASSWORD (and ZOHO_MAIL_HOST for non-.com regions).',
       }
     case 'gmail':
       return {
