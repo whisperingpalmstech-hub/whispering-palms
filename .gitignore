@@ -63,9 +63,13 @@ anythingllm/storage/
 # Migration backups contain production user data — never commit
 _migration_backups/
 
-# Documentation (keep only README.md)
+# Documentation (keep only README.md and the deploy runbook)
 *.md
 !README.md
+# DEPLOY.md is operational, not prose: env vars, webhook events and the
+# post-deploy checks. It has to travel with the repo or a fresh clone cannot
+# be deployed without asking someone.
+!docs/DEPLOY.md
 
 # Build artifacts
 .next/
