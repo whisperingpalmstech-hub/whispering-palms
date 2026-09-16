@@ -172,6 +172,13 @@ BITCOIN_WEBHOOK_SECRET=your_webhook_secret
 ANYTHINGLLM_API_URL=https://your-anythingllm-instance.com
 ANYTHINGLLM_API_KEY=your_anythingllm_api_key
 
+# Chat model for new user workspaces. BOTH must be set, or the built-in
+# default (groq / openai/gpt-oss-120b) is used. Never leave a workspace to
+# inherit the AnythingLLM instance default - see lib/services/llm-models.ts
+# for why, and for the list of models verified working on this instance.
+ANYTHINGLLM_CHAT_PROVIDER=groq
+ANYTHINGLLM_CHAT_MODEL=openai/gpt-oss-120b
+
 # Voice TTS (For Flame/SuperFlame plans - Multilingual)
 # Primary: Google Cloud TTS (recommended - supports ALL languages)
 # Uses same credentials as Vision API - no extra setup needed!

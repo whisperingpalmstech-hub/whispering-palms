@@ -5,6 +5,7 @@
 
 import { buildAstrologerPrompt } from '@/lib/prompts/astrologer-persona'
 import { getPromptText, PROMPT_NAMES } from '@/lib/services/prompts'
+import { getChatModelConfig } from '@/lib/services/llm-models'
 
 import FormDataNode from 'form-data'
 import axios from 'axios'
@@ -89,12 +90,20 @@ class AnythingLLMService {
       }
       
       // Use correct endpoint: POST /api/v1/workspace/new (singular, not plural)
+      //
+      // chatProvider/chatModel are pinned explicitly. Without them the
+      // workspace inherits the instance-wide default, which is DeepSeek
+      // `deepseek-v4-flash` — a model the DeepSeek API refuses, so every
+      // reading for that user would fail. See lib/services/llm-models.ts.
+      const { chatProvider, chatModel } = getChatModelConfig()
+
       const response = await fetch(`${this.config.apiUrl}/api/v1/workspace/new`, {
         method: 'POST',
         headers: headers,
         body: JSON.stringify({
           name: workspaceName,
-          // Optional: Configure embedding model, vector DB, etc.
+          chatProvider,
+          chatModel,
         }),
       })
 

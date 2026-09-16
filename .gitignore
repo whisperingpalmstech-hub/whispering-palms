@@ -67,3 +67,4 @@ _migration_backups/
 .next/
 tsc_output.txt
 *.tsbuildinfo
+supabase/.temp/
