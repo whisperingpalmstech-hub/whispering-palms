@@ -13,14 +13,35 @@
  * a non-palm returns palmDetected=false. Nothing is invented — a line that
  * cannot be seen is reported absent rather than filled in.
  *
- * Coordinates are deliberately NOT requested. Testing showed single-shot
- * pixel tracing is unreliable (the life line landed mid-palm instead of
- * around the thumb), and a wrong overlay is worse than none. The visual in
- * lib/services/palm-visual.ts draws anatomically-correct curves whose
- * length/curvature/depth/clarity come from these measured attributes.
+ * Coordinates are deliberately NOT requested. Two separate experiments showed
+ * model-driven line placement is not reliable enough to show a user:
+ * image-edit models invented creases that were not on the hand, and
+ * coordinate-based tracing put the lines across fingers and background. A
+ * wrong overlay on someone's own hand is worse than no overlay, so v1 ships
+ * the findings as text and shows no drawn lines at all.
  */
 
-import type { PalmAnalysis, AnalysedLine } from './palm-visual'
+/** One line as read off the photograph. */
+export interface AnalysedLine {
+  present: boolean
+  length?: string
+  depth?: string
+  clarity?: string
+  curve?: string
+  branches?: number
+  observation?: string
+}
+
+/** The findings for one palm photograph. */
+export interface PalmAnalysis {
+  palmDetected: boolean
+  hand?: string
+  imageQuality?: string
+  palmShape?: string
+  lines: Record<string, AnalysedLine>
+  specialMarks?: string[]
+  confidence?: string
+}
 
 const ANALYSIS_PROMPT = `You are a careful palmistry image analyst. Describe ONLY what is
 physically visible in this photograph of a palm. Do not predict the future.

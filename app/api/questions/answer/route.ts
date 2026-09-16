@@ -191,11 +191,14 @@ export async function POST(request: NextRequest) {
     // 🔥 CRITICAL CHANGE: We now extract ACTUAL palmistry features (marriage lines, heart lines, etc.)
     // instead of generic computer vision labels ("Finger", "White", "Gesture")
     let palmDescriptions: Map<string, string> = new Map()
+    // The structured findings behind the reading, stored with the answer so
+    // the report shows exactly what this reading was based on.
+    const palmAnalyses: Array<{ palmType: string; analysis: unknown }> = []
     if (userContextData.palmImages.length > 0) {
       try {
         console.log('[API] Extracting palmistry data from', userContextData.palmImages.length, 'palm images...')
         const imagesWithUrls = await generateImageSignedUrls(userContextData.palmImages)
-        palmDescriptions = await extractPalmistryData(imagesWithUrls)
+        palmDescriptions = await extractPalmistryData(imagesWithUrls, palmAnalyses as never)
         console.log('[API] ✅ Palmistry extraction complete')
       } catch (error) {
         console.error('[API] Error extracting palmistry data:', error)
@@ -440,6 +443,10 @@ Format your response strictly like this:
         safety_flags: {}, // TODO: Implement safety checks
         reviewed: false,
         flagged: false,
+        // The findings this reading was generated from. Null when no palm
+        // analysis was available, so the report can say so honestly instead
+        // of showing invented detail.
+        palm_analysis: palmAnalyses.length > 0 ? { palms: palmAnalyses } : null,
       })
       .select()
       .single()

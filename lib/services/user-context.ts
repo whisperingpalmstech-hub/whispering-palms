@@ -6,7 +6,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { extractPalmFeatures } from './palm-extractor'
 import { interpretPalmistry, formatPalmistryForLLM, type PalmistryFeatures } from './palmistry-interpreter'
-import { analysePalmPhoto, formatAnalysisForLLM } from './palm-analysis'
+import { analysePalmPhoto, formatAnalysisForLLM, type PalmAnalysisFull } from './palm-analysis'
 
 export interface UserContext {
   // Basic user information
@@ -154,7 +154,14 @@ export async function generateImageSignedUrls(
  * NOW WITH PROPER ERROR HANDLING - no fake fallback text
  */
 export async function extractPalmistryData(
-  images: PalmImage[]
+  images: PalmImage[],
+  /**
+   * Optional sink for the STRUCTURED analysis behind each palm. The reading
+   * prompt only needs the formatted text, but the report page needs the
+   * findings themselves — and must show the exact analysis the reading was
+   * built on, not a fresh vision call that could disagree.
+   */
+  collectAnalyses?: Array<{ palmType: string; analysis: PalmAnalysisFull }>
 ): Promise<Map<string, string>> {
   if (images.length === 0) {
     return new Map()
@@ -191,6 +198,7 @@ export async function extractPalmistryData(
         }
         const palmistryText = formatAnalysisForLLM(visual, image.palmType)
         console.log(`[Palmistry] ✓ ${image.palmType} analysed by vision model (confidence: ${visual.confidence})`)
+        collectAnalyses?.push({ palmType: image.palmType, analysis: visual })
         successfulExtractions.push({ palmType: image.palmType, palmistryText })
         continue
       }

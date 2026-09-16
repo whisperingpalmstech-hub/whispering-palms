@@ -34,10 +34,10 @@ export function generateAnswerEmail(data: EmailData): string {
   // App URL for the redirect link
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const playbackUrl = `${appUrl.replace(/\/$/, '')}/playback/${answerId}`
-  // The traced-palm card lives on the dashboard. Linking (rather than
-  // embedding the image) keeps the palm photo behind login: the storage
-  // bucket must never be relied on as private from an email client.
-  const dashboardUrl = `${appUrl.replace(/\/$/, '')}/dashboard`
+  // The report page shows the palm findings this reading was generated from.
+  // It sits behind login, so the palm photo and analysis are never exposed by
+  // the email itself.
+  const reportUrl = `${appUrl.replace(/\/$/, '')}/report/${answerId}`
 
   if (planType === 'flame' || planType === 'superflame') {
     // Flame plan: Redirect to the high-quality playback page
@@ -189,9 +189,9 @@ export function generateAnswerEmail(data: EmailData): string {
               <table cellpadding="0" cellspacing="0" style="margin: 0 auto; border: 2px solid #d4af37; border-radius: 12px; background-color: #fffdf5;">
                 <tr>
                   <td style="padding: 18px 26px; text-align: center;">
-                    <p style="margin: 0 0 6px; color: #333333; font-size: 15px; font-weight: bold;">See your lines on your own palm</p>
-                    <p style="margin: 0 0 14px; color: #666666; font-size: 13px;">Your heart, head and life lines, traced on your photo.</p>
-                    <a href="${dashboardUrl}" style="background: linear-gradient(135deg, #d4af37 0%, #b8860b 100%); color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 14px; display: inline-block;">View my palm lines</a>
+                    <p style="margin: 0 0 6px; color: #333333; font-size: 15px; font-weight: bold;">See what your palm actually showed</p>
+                    <p style="margin: 0 0 14px; color: #666666; font-size: 13px;">The findings this reading was built on — line by line.</p>
+                    <a href="${reportUrl}" style="background: linear-gradient(135deg, #d4af37 0%, #b8860b 100%); color: #ffffff; padding: 12px 28px; text-decoration: none; border-radius: 50px; font-weight: bold; font-size: 14px; display: inline-block;">View my full report</a>
                   </td>
                 </tr>
               </table>
