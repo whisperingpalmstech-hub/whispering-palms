@@ -196,6 +196,18 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription, supa
     })
     .eq('provider_subscription_id', subscription.id)
     .eq('provider', 'stripe')
+
+  // Downgrade the user too. Marking the subscription row cancelled while
+  // leaving user_profiles.subscription_plan on the paid tier let a cancelled
+  // customer keep paid access — and the paid question quota — indefinitely.
+  const userId = subscription.metadata?.userId
+  if (userId) {
+    await activatePlan(supabase, userId, 'basic')
+  } else {
+    console.error(
+      `[stripe] subscription ${subscription.id} deleted with no userId in metadata; cannot downgrade`
+    )
+  }
 }
 
 async function handleInvoicePaymentSucceeded(invoice: Stripe.Invoice, supabase: any) {
