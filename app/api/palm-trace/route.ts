@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { getAuthenticatedUser } from '@/lib/auth/get-user'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createErrorResponse } from '@/lib/utils/response'
 import {
   locatePalm,
@@ -23,6 +24,13 @@ export const maxDuration = 120
  * Cropping matters: given a two-hand photo the model blends creases from
  * both and misplaces the lines. Verified on a two-hand sample.
  *
+ * CACHING. A trace costs real money (~$0.10) and ~25s, and the dashboard
+ * loads far more often than a user re-uploads a palm. The result is stored
+ * in the palm-images bucket next to the source as `<path>.traced.png` and
+ * served from there on every later request. A new upload has a new
+ * storage_path, so it gets a fresh trace automatically; `?refresh=1`
+ * forces one.
+ *
  * `?verify=1` also runs the quality check and returns it in a header, which
  * is how a bad trace is detected rather than silently shipped.
  */
@@ -43,9 +51,31 @@ export async function GET(request: NextRequest) {
     return createErrorResponse('Upload a palm photo first', 404)
   }
 
+  const sourcePath = images[0].storage_path
+  const tracedPath = `${sourcePath}.traced.png`
+  const refresh = request.nextUrl.searchParams.get('refresh') === '1'
+  const admin = createAdminClient()
+
+  // Serve the cached trace when we have one.
+  if (!refresh) {
+    const { data: cached } = await admin.storage
+      .from('palm-images')
+      .download(tracedPath)
+    if (cached) {
+      const buf = Buffer.from(await cached.arrayBuffer())
+      return new Response(new Uint8Array(buf), {
+        headers: {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'private, max-age=3600',
+          'X-Palm-Cache': 'hit',
+        },
+      })
+    }
+  }
+
   const { data: signed } = await supabase.storage
     .from('palm-images')
-    .createSignedUrl(images[0].storage_path, 600)
+    .createSignedUrl(sourcePath, 600)
 
   if (!signed?.signedUrl) {
     return createErrorResponse('Could not read your palm image', 500)
@@ -103,7 +133,8 @@ export async function GET(request: NextRequest) {
 
     const headers: Record<string, string> = {
       'Content-Type': 'image/png',
-      'Cache-Control': 'private, max-age=600',
+      'Cache-Control': 'private, max-age=3600',
+      'X-Palm-Cache': 'miss',
       'X-Palm-Hand': location.which,
       'X-Palm-Quality': location.quality,
     }
@@ -117,12 +148,23 @@ export async function GET(request: NextRequest) {
       headers['X-Palm-Problems'] = v.problems.join('; ').slice(0, 300)
     }
 
+    // Persist for next time. A cache write failure must not fail the
+    // response the user is waiting on.
+    const { error: upErr } = await admin.storage
+      .from('palm-images')
+      .upload(tracedPath, traced, { contentType: 'image/png', upsert: true })
+    if (upErr) console.warn('[palm-trace] cache write failed:', upErr.message)
+
     return new Response(new Uint8Array(traced), { headers })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     console.error('[palm-trace] failed:', message)
     // A billing/config failure must not read as "your photo was bad".
-    if (message.includes('402') || message.includes('OPENROUTER_API_KEY')) {
+    if (
+      message.includes('402') ||
+      message.includes('OPENROUTER_API_KEY') ||
+      message.includes('OPENAI_API_KEY')
+    ) {
       return createErrorResponse(
         'Palm tracing is not configured on this server',
         503
