@@ -7,12 +7,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@/lib/supabase/server'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_dummy', {
-    apiVersion: '2025-02-24.acacia',
-})
+// Built per request, not at module scope: `next build` imports this module to
+// collect page data, so a module-level `new Stripe(...)` runs at build time
+// and throws when STRIPE_SECRET_KEY is absent from the build environment —
+// failing the entire build. See the same fix in the webhook route.
+function getStripe(): Stripe | null {
+    const key = process.env.STRIPE_SECRET_KEY
+    if (!key) return null
+    return new Stripe(key, { apiVersion: '2025-02-24.acacia' })
+}
 
 export async function GET(request: NextRequest) {
     try {
+        const stripe = getStripe()
+        if (!stripe) {
+            return NextResponse.json(
+                { error: 'Payments are not configured on this server' },
+                { status: 503 }
+            )
+        }
+
         const { searchParams } = new URL(request.url)
         const sessionId = searchParams.get('session_id')
 

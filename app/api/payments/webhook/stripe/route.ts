@@ -13,16 +13,36 @@ function planTypeOrBasic(value: unknown): PlanType {
   return isPlanType(value) ? value : 'basic'
 }
 
+// The Stripe client is built PER REQUEST, not at module scope.
+//
+// Next collects page data at build time, which imports this module. A
+// module-level `new Stripe(...)` therefore runs during `next build`, and with
+// no STRIPE_SECRET_KEY in the build environment the constructor throws
+// "Neither apiKey nor config.authenticator provided" — failing the whole
+// build, so no deployment is ever created. Vercel does not expose runtime env
+// vars to every build step, so the key genuinely is absent then.
+//
 // No fallback key: a literal test key in the source is a secret in version
 // control, and it silently turns a misconfigured deploy into one that appears
-// to work against the wrong Stripe account. Unset means Stripe rejects the
-// call, which is the honest failure.
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2025-02-24.acacia' as any,
-})
+// to work against the wrong Stripe account. Unset means the request fails
+// loudly at runtime, which is the honest failure.
+function getStripe(): Stripe | null {
+  const key = process.env.STRIPE_SECRET_KEY
+  if (!key) return null
+  return new Stripe(key, { apiVersion: '2025-02-24.acacia' as any })
+}
 
 // Webhook secret for verifying Stripe events
 export async function POST(request: NextRequest) {
+  const stripe = getStripe()
+  if (!stripe) {
+    console.error('[stripe] STRIPE_SECRET_KEY is not set; cannot verify webhook')
+    return NextResponse.json(
+      { error: 'Payments are not configured on this server' },
+      { status: 503 }
+    )
+  }
+
   const body = await request.text()
   const signature = request.headers.get('stripe-signature')
 

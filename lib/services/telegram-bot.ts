@@ -226,15 +226,36 @@ const ZODIAC_EMOJIS: Record<string, string> = {
 
 class TelegramBotService {
     private botToken: string
-    private supabase: ReturnType<typeof createSupabaseClient>
+    /**
+     * Created on first use, not in the constructor.
+     *
+     * `telegramBotService` is instantiated at module scope (bottom of this
+     * file), so the constructor runs while `next build` collects page data.
+     * Building a Supabase client there with the non-null-asserted
+     * NEXT_PUBLIC_SUPABASE_URL! / SUPABASE_SERVICE_ROLE_KEY! threw when those
+     * are absent from the build environment, which failed the whole build and
+     * meant no deployment was ever produced.
+     */
+    private _supabase: ReturnType<typeof createSupabaseClient> | null = null
+
+    private get supabase(): ReturnType<typeof createSupabaseClient> {
+        if (!this._supabase) {
+            const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+            const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+            if (!url || !key) {
+                throw new Error(
+                    'Telegram bot: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set'
+                )
+            }
+            this._supabase = createSupabaseClient(url, key)
+        }
+        return this._supabase
+    }
     private baseUrl = 'https://api.telegram.org/bot'
 
     constructor() {
         this.botToken = process.env.TELEGRAM_BOT_TOKEN || ''
-        this.supabase = createSupabaseClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!
-        )
+        // No Supabase client here — see the `supabase` getter above.
     }
 
     // =====================================================
