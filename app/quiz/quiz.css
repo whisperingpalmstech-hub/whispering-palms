@@ -1,0 +1,165 @@
+/* ============================================================
+   Quiz Page - Dark mystical theme overrides
+   These styles override the light theme for the quiz flow
+   ============================================================ */
+
+/* Override form inputs inside quiz for dark theme */
+.quiz-country-input select,
+.quiz-country-input input,
+.quiz-date-picker select,
+.quiz-date-picker input,
+.quiz-time-picker select,
+.quiz-time-picker input,
+.quiz-place-input input {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 2px solid rgba(255, 255, 255, 0.1) !important;
+    color: white !important;
+    border-radius: 1rem !important;
+    padding: 0.875rem 1.25rem !important;
+    font-size: 1rem !important;
+    transition: all 0.3s ease !important;
+}
+
+.quiz-country-input select:focus,
+.quiz-country-input input:focus,
+.quiz-date-picker select:focus,
+.quiz-date-picker input:focus,
+.quiz-time-picker select:focus,
+.quiz-time-picker input:focus,
+.quiz-place-input input:focus {
+    border-color: rgba(251, 191, 36, 0.5) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    outline: none !important;
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.1) !important;
+}
+
+.quiz-country-input select option,
+.quiz-date-picker select option,
+.quiz-time-picker select option {
+    background: #1e1b4b !important;
+    color: white !important;
+}
+
+.quiz-country-input label,
+.quiz-date-picker label,
+.quiz-time-picker label,
+.quiz-place-input label {
+    color: rgba(255, 255, 255, 0.6) !important;
+    font-size: 0.875rem !important;
+}
+
+.quiz-country-input p,
+.quiz-date-picker p,
+.quiz-time-picker p,
+.quiz-place-input p {
+    color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* Place input suggestions dropdown for dark theme */
+.quiz-place-input ul,
+.quiz-place-input [class*="dropdown"],
+.quiz-place-input [class*="suggestion"] {
+    background: rgba(30, 27, 75, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(20px) !important;
+}
+
+.quiz-place-input li,
+.quiz-place-input [class*="item"] {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.quiz-place-input li:hover,
+.quiz-place-input [class*="item"]:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Country input dropdown styling */
+.quiz-country-input ul,
+.quiz-country-input [class*="dropdown"],
+.quiz-country-input div[class*="absolute"] {
+    background: rgba(30, 27, 75, 0.95) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+    backdrop-filter: blur(20px) !important;
+}
+
+.quiz-country-input li,
+.quiz-country-input div[class*="absolute"] button,
+.quiz-country-input div[class*="absolute"] div {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.quiz-country-input li:hover,
+.quiz-country-input div[class*="absolute"] button:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Shimmer animation for progress bar */
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* Ensure the quiz page overrides the body background */
+.quiz-page-wrapper {
+    background: linear-gradient(135deg,
+            rgb(2, 6, 23) 0%,
+            rgb(15, 12, 41) 30%,
+            rgb(30, 20, 60) 60%,
+            rgb(10, 8, 30) 100%) !important;
+}
+
+/* Date picker grid adjustment for dark theme */
+.quiz-date-picker button {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.quiz-date-picker button:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.quiz-date-picker button[class*="selected"],
+.quiz-date-picker button[aria-selected="true"] {
+    background: rgba(251, 191, 36, 0.3) !important;
+    color: white !important;
+}
+
+/* Time picker specific overrides */
+.quiz-time-picker div[class*="flex"] {
+    gap: 0.5rem;
+}
+
+/* Password input dark theme override */
+.quiz-password-input input {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 2px solid rgba(255, 255, 255, 0.1) !important;
+    color: white !important;
+    border-radius: 1rem !important;
+    padding: 0.875rem 1.25rem !important;
+    font-size: 1rem !important;
+    transition: all 0.3s ease !important;
+}
+
+.quiz-password-input input:focus {
+    border-color: rgba(251, 191, 36, 0.5) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    outline: none !important;
+    box-shadow: 0 0 20px rgba(251, 191, 36, 0.1) !important;
+}
+
+.quiz-password-input input::placeholder {
+    color: rgba(255, 255, 255, 0.25) !important;
+}
+
+.quiz-password-input button {
+    color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.quiz-password-input label {
+    color: rgba(255, 255, 255, 0.5) !important;
+}

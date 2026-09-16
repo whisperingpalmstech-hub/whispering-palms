@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Sign up with Supabase Auth.
     // Supabase relays the confirmation email through the custom SMTP host
     // configured in the dashboard - see docs/EMAIL_SETUP.md.
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    const signUpResult = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -46,7 +46,25 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    if (authError) {
+    let authData = signUpResult.data
+    let authError = signUpResult.error
+
+    // Supabase returns success with an EMPTY identities array when the address
+    // is already registered (it deliberately does not confirm the account
+    // exists). Treat that as a login attempt rather than a silent no-op.
+    if (authData.user && authData.user.identities && authData.user.identities.length === 0) {
+      const signInResult = await supabase.auth.signInWithPassword({ email, password })
+
+      if (signInResult.error) {
+        return createErrorResponse(
+          'An account with this email already exists. The password provided is incorrect. Please log in.',
+          401
+        )
+      }
+
+      authData = signInResult.data as any
+      authError = null
+    } else if (authError) {
       // A raw "email rate limit exceeded" tells the user nothing actionable.
       if (isRateLimitError(authError)) {
         return createErrorResponse(RATE_LIMIT_MESSAGE, 429)
@@ -64,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!authData.user) {
-      return createErrorResponse('Failed to create user', 500)
+      return createErrorResponse('Failed to create or login user', 500)
     }
 
     // Create user record in custom users table

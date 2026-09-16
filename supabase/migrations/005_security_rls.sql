@@ -1,0 +1,55 @@
+-- ⛔ SUPERSEDED — DO NOT RUN. Kept as a record, with the reason.
+-- =====================================================
+-- Whispering Palms - Security & RLS Setup  (WITHDRAWN)
+-- =====================================================
+--
+-- WHY THIS FILE WAS NEUTRALISED
+-- -----------------------------
+-- Every policy in the original version was written with `OR true`, or with a
+-- bare `USING (true)`:
+--
+--     CREATE POLICY "Users can read own data" ON users
+--       FOR SELECT USING (id = current_app_user() OR true);
+--
+--     CREATE POLICY "Service role access only" ON anythingllm_workspaces
+--       FOR ALL USING (true);
+--
+-- `OR true` is true for every row and every caller, so the predicate never
+-- restricts anything. This is Row Level Security switched on with the door
+-- held open: `rowsecurity = true` looks green in the dashboard while the
+-- public anon key — which ships to every browser — can still read every
+-- user's email, name, date/time/place of birth, palm image paths, and the
+-- full text of every question and answer.
+--
+-- It is worse than not running it at all, because it reads as "we did RLS".
+--
+-- Postgres combines multiple PERMISSIVE policies with OR. So running this
+-- file next to the correct owner-scoped policies would not tighten anything —
+-- it would re-open the leak instantly and silently, on tables that are
+-- currently protected.
+--
+-- The premise in the original footer ("we use custom JWT, so the backend
+-- enforces authorization") does not hold: the app authenticates with Supabase
+-- Auth and the frontend holds a real anon-key session, so auth.uid() IS
+-- available and PostgREST IS directly reachable with that key.
+--
+-- STATUS: never applied to the live database. Verified 2026-09-15 — only the
+-- owner-scoped policies from migrations/003 exist, and an anon-key probe
+-- returns 0 rows on users / user_profiles / questions / answers / palm_images.
+--
+-- USE INSTEAD (both applied 2026-09-15):
+--     migrations/003_enable_rls_core_tables.sql  owner-only policies
+--                                                (auth.uid() = user_id)
+--     migrations/006_close_view_rls_bypass.sql   security_invoker = true on
+--                                                subscription_summary and
+--                                                user_lifecycle_state
+--
+-- NOTE ON user_lifecycle_state: this file's companion
+-- (004_user_lifecycle.sql) creates that view. A Postgres view runs with its
+-- OWNER's privileges by default, so it bypassed RLS on the underlying tables
+-- entirely until migration 006 set security_invoker on it. Keep 006 applied
+-- whenever that view exists.
+--
+-- If RLS ever needs revisiting, write owner-scoped predicates with no `OR
+-- true`, and verify with an anon-key probe that returns zero rows — not by
+-- reading `rowsecurity` in the dashboard.

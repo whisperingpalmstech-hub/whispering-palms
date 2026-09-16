@@ -78,8 +78,10 @@ export const config = {
      * - api/auth (auth API routes - don't protect these)
      * - api/telegram (telegram bot webhooks and cron jobs)
      * - api/email (email cron jobs)
+     * - api/quiz (quiz API routes - public)
+     * - quiz (public quiz onboarding flow)
      * - public files
      */
-    '/((?!_next/static|_next/image|favicon.ico|api/auth|api/telegram|api/email|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|api/auth|api/telegram|api/email|api/quiz|quiz|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

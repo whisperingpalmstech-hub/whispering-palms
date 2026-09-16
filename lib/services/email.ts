@@ -112,6 +112,12 @@ export function generateAnswerEmail(data: EmailData): string {
           </tr>
           
           <tr>
+            <td style="padding: 20px 40px; text-align: center;">
+              <p style="margin: 0; color: #999999; font-size: 11px; line-height: 1.5; font-style: italic;">⚠️ Disclaimer: The readings provided are predictions based on your stars and are not 100% accurate. They are meant for guidance purposes only.</p>
+            </td>
+          </tr>
+          
+          <tr>
             <td style="padding: 30px 40px; background-color: #fafafa; border-top: 1px solid #eeeeee; text-align: center;">
               <p style="margin: 0 0 5px; color: #333333; font-size: 16px; font-weight: bold;">Whispering Palms</p>
               <p style="margin: 0; color: #999999; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;">A Private Spiritual Experience</p>
@@ -171,6 +177,12 @@ export function generateAnswerEmail(data: EmailData): string {
               <div style="color: #333333; font-size: 16px; line-height: 1.8;">
                 ${answer.split('\n').filter(p => p.trim()).map(p => `<p style="margin: 0 0 15px;">${p.trim()}</p>`).join('')}
               </div>
+            </td>
+          </tr>
+          
+          <tr>
+            <td style="padding: 20px 40px; text-align: center;">
+              <p style="margin: 0; color: #999999; font-size: 11px; line-height: 1.5; font-style: italic;">⚠️ Disclaimer: The readings provided are predictions based on your stars and are not 100% accurate. They are meant for guidance purposes only.</p>
             </td>
           </tr>
           

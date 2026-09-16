@@ -7,10 +7,15 @@ import { getPaymentService } from '@/lib/services/payment/PaymentService'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Stripe from 'stripe'
 
+// No fallback key: a literal test key in the source is a secret in version
+// control, and it silently turns a misconfigured deploy into one that appears
+// to work against the wrong Stripe account. Unset means Stripe rejects the
+// call, which is the honest failure.
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2025-02-24.acacia',
+  apiVersion: '2025-02-24.acacia' as any,
 })
 
+// Webhook secret for verifying Stripe events
 export async function POST(request: NextRequest) {
   const body = await request.text()
   const signature = request.headers.get('stripe-signature')

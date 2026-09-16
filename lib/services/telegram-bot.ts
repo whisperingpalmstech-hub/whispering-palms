@@ -101,36 +101,59 @@ export interface TelegramMessageLog {
 // Messages Templates
 const MESSAGES = {
     // Welcome message
-    welcome: `🌿 *Welcome to Whispering Palms*
+    welcome: (firstName: string) => `🌿 *Welcome ${firstName} to Whispering Palms!*
 
-Your palms carry answers about:
-💖 Love
-💼 Career
-💰 Money
-🧘 Health
+I am your personal AI Astrologer. I can help you uncover the mysteries of your life through Palmistry and Astrology. ✨
 
-Get your *FREE daily horoscope* by sharing your birth details ✨`,
+*How can I help you today?*`,
 
     // Onboarding prompts
-    askDob: `📅 Please enter your *Date of Birth*
-(Example: 21/08/1998)`,
+    askDob: `📅 To reveal your horoscope, I need your *Date of Birth*.
+(Format: DD/MM/YYYY, e.g., 21/08/1998)`,
 
-    askTime: `⏰ What is your *Time of Birth*?
-(Example: 07:45 AM or "unknown" if you don't know)`,
+    askTime: `⏰ Thanks! Now, what is your *Time of Birth*?
+(Format: HH:MM AM/PM, e.g., 07:45 AM or write "unknown")`,
 
-    askPlace: `📍 *Place of Birth?*
+    askPlace: `📍 almost there! *Place of Birth?*
 (City, Country)`,
 
     // Confirmation
-    confirmation: `✨ *Thank you!*
+    confirmation: `✨ *Thank you! Your profile is set.*
 
-Your daily horoscope is now *ACTIVATED* 🌙  
-You'll receive guidance every day at 9:00 AM IST.
+🔮 parsing the stars for you... This might take a moment.`,
 
-Stay connected with Whispering Palms 🤍
+    // Issues
+    loveIssue: `💖 *Love & Relationships* are complex.
 
-🌐 Visit our website for deeper insights:
-https://whispering-palms.org`,
+To get deep clarity on your relationship, breakup, or future partner, a general horoscope isn't enough.
+
+✋ *Upload your palm* on our website for a personalized AI reading.`,
+
+    moneyIssue: `💰 *Money & Career* stability is crucial.
+
+Curious about your next big opportunity or financial growth? Your palm lines hold the secrets.
+
+✋ *Upload your palm* to discover your financial destiny.`,
+
+    healthIssue: `🧘 *Health & Wellness* is wealth.
+
+Your palm can reveal potential health indicators and vitality levels.
+
+✋ *Secure your well-being* by getting a detailed palm reading.`,
+
+    marriageIssue: `💍 *Marriage & Compatibility*
+
+When will you get married? Will it be happy? Your heart line knows the answer.
+
+✋ *Find out now* by scanning your palm.`,
+
+    breakupIssue: `💔 *Healing from a Breakup*?
+
+Wondering if they will come back or if it's time to move on? Let the lines of destiny guide you.
+
+✋ *Get clarity now* with a palm reading.`,
+
+    introUrl: `https://whispering-palms.org`,
 
     // Error messages
     invalidDob: `❌ Please enter a valid date in DD/MM/YYYY format.
@@ -148,21 +171,21 @@ Example: 07:45 AM`,
 💰 *Money:* ${money}
 🧘 *Health:* ${health}
 
-✨ Feeling confused about your future?
-Upload your palm & unlock deeper insights 👇
-🔗 https://whispering-palms.org`,
+✨ *Need deeper answers?*
+Your daily horoscope is just a glimpse. For specific answers about your life path:
+👇`,
 
     // Command responses
     help: `🌿 *Whispering Palms Help*
 
 Commands:
-/start - Start or restart your journey
-/horoscope - Get today's horoscope
-/profile - View your birth details
-/unsubscribe - Stop receiving messages
-/help - Show this message
+/start - Restart the journey
+/horoscope - Get today's prediction
+/profile - View your details
+/unsubscribe - Stop messages
+/help - Show this menu
 
-🔗 Website: https://whispering-palms.org`,
+🔗 [Official Website](https://whispering-palms.org)`,
 
     profileInfo: (sub: TelegramSubscriber) =>
         `🌿 *Your Profile*
@@ -252,13 +275,22 @@ class TelegramBotService {
 
     async setWebhook(webhookUrl: string): Promise<boolean> {
         try {
+            const payload: Record<string, unknown> = {
+                url: webhookUrl,
+                allowed_updates: ['message', 'callback_query'],
+            }
+
+            // Using standard secret token header for security
+            // Telegram sends this in X-Telegram-Bot-Api-Secret-Token
+            const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET
+            if (secretToken) {
+                payload.secret_token = secretToken
+            }
+
             const response = await fetch(`${this.baseUrl}${this.botToken}/setWebhook`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    url: webhookUrl,
-                    allowed_updates: ['message', 'callback_query'],
-                }),
+                body: JSON.stringify(payload),
             })
 
             const result = await response.json()
@@ -293,11 +325,25 @@ class TelegramBotService {
                 const callbackData = update.callback_query.data
                 const chatId = update.callback_query.message?.chat.id
                 if (callbackData && chatId) {
+                    // Acknowledge callback immediately to stop progress bar
+                    await this.acknowledgeCallback(update.callback_query.id)
                     await this.handleCallback(chatId, update.callback_query.from, callbackData)
                 }
             }
         } catch (error) {
             console.error('[TelegramBot] Handle update error:', error)
+        }
+    }
+
+    async acknowledgeCallback(callbackQueryId: string): Promise<void> {
+        try {
+            await fetch(`${this.baseUrl}${this.botToken}/answerCallbackQuery`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ callback_query_id: callbackQueryId }),
+            })
+        } catch (e) {
+            console.error('[TelegramBot] Ack callback error', e)
         }
     }
 
@@ -319,12 +365,17 @@ class TelegramBotService {
 
         // If no subscriber and not a command, prompt to start
         if (!subscriber) {
-            await this.sendMessage(chatId, '🌿 Welcome! Please send /start to begin your journey with Whispering Palms.')
+            await this.handleStart(chatId, from)
             return
         }
 
         // Handle based on onboarding step
-        await this.handleOnboardingInput(chatId, subscriber, text)
+        // But if they are just sending random text and onboarding is complete, show menu
+        if (subscriber.onboarding_completed) {
+            await this.showMainMenu(chatId, from.first_name)
+        } else {
+            await this.handleOnboardingInput(chatId, subscriber, text)
+        }
     }
 
     async handleCommand(chatId: number, from: TelegramUser, command: string): Promise<void> {
@@ -353,11 +404,71 @@ class TelegramBotService {
 
     async handleCallback(chatId: number, from: TelegramUser, data: string): Promise<void> {
         // Handle inline button callbacks
-        if (data === 'get_horoscope') {
-            await this.handleHoroscopeCommand(chatId, from.id)
-        } else if (data === 'visit_website') {
-            await this.sendMessage(chatId, '🌐 Visit our website for deeper insights:\nhttps://whispering-palms.org')
+        console.log(`[TelegramBot] Handling callback: ${data}`)
+
+        switch (data) {
+            case 'get_horoscope':
+                await this.handleHoroscopeCommand(chatId, from.id)
+                break
+            case 'love_issue':
+                await this.sendTopicResponse(chatId, MESSAGES.loveIssue)
+                break
+            case 'money_issue':
+                await this.sendTopicResponse(chatId, MESSAGES.moneyIssue)
+                break
+            case 'health_issue':
+                await this.sendTopicResponse(chatId, MESSAGES.healthIssue)
+                break
+            case 'marriage_issue':
+                await this.sendTopicResponse(chatId, MESSAGES.marriageIssue)
+                break
+            case 'breakup_issue':
+                await this.sendTopicResponse(chatId, MESSAGES.breakupIssue)
+                break
+            case 'visit_website':
+                await this.sendMessage(chatId, `🌐 Visit our website for deeper insights:\n${MESSAGES.introUrl}`)
+                break
         }
+    }
+
+    async sendTopicResponse(chatId: number, message: string): Promise<void> {
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '✋ Upload Palm on Website', url: MESSAGES.introUrl }
+                ],
+                [
+                    { text: '🔮 Get Free Daily Horoscope', callback_data: 'get_horoscope' }
+                ]
+            ]
+        }
+        await this.sendMessage(chatId, message, 'Markdown', keyboard)
+    }
+
+    async showMainMenu(chatId: number, firstName: string): Promise<void> {
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '💖 Love Analysis', callback_data: 'love_issue' },
+                    { text: '💰 Money & Career', callback_data: 'money_issue' }
+                ],
+                [
+                    { text: '💍 Marriage', callback_data: 'marriage_issue' },
+                    { text: '💔 Breakup Help', callback_data: 'breakup_issue' }
+                ],
+                [
+                    { text: '🧘 Health', callback_data: 'health_issue' }
+                ],
+                [
+                    { text: '🔮 Get Daily Horoscope', callback_data: 'get_horoscope' }
+                ],
+                [
+                    { text: '🌐 Visit Whispering Palms', url: MESSAGES.introUrl }
+                ]
+            ]
+        }
+
+        await this.sendMessage(chatId, `How can I help you today, ${firstName}? \n\nSelect a topic below:`, 'Markdown', keyboard)
     }
 
     // =====================================================
@@ -365,36 +476,27 @@ class TelegramBotService {
     // =====================================================
 
     async handleStart(chatId: number, from: TelegramUser): Promise<void> {
-        // Check if already subscribed and completed onboarding
+        // Always greet 
+        // Check if subscriber exists
         let subscriber = await this.getSubscriber(from.id)
 
-        if (subscriber && subscriber.onboarding_completed) {
-            await this.sendMessage(chatId, MESSAGES.alreadySubscribed)
-            return
-        }
-
-        // Create or reset subscriber
+        // Create if not exists
         if (!subscriber) {
             subscriber = await this.createSubscriber(from)
-        } else {
-            // Reset onboarding
-            await this.updateSubscriber(from.id, {
-                onboarding_step: 'awaiting_dob',
-                onboarding_completed: false,
-            })
         }
 
-        // Send welcome message
-        await this.sendMessage(chatId, MESSAGES.welcome)
-        await this.logMessage(subscriber.id, from.id, 'welcome', MESSAGES.welcome)
+        // Show the interactive menu immediately
+        // The user wants "immediate reply" and "greet them with their name"
+        await this.sendMessage(chatId, MESSAGES.welcome(from.first_name))
 
-        // Prompt for DOB
-        setTimeout(async () => {
-            await this.sendMessage(chatId, MESSAGES.askDob)
-        }, 1000)
+        // Show buttons
+        await this.showMainMenu(chatId, from.first_name)
+
+        await this.logMessage(subscriber.id, from.id, 'welcome', 'Started bot')
     }
 
     async handleOnboardingInput(chatId: number, subscriber: TelegramSubscriber, text: string): Promise<void> {
+        // If they are in the middle of onboarding, continue
         switch (subscriber.onboarding_step) {
             case 'awaiting_dob':
                 await this.handleDobInput(chatId, subscriber, text)
@@ -406,8 +508,8 @@ class TelegramBotService {
                 await this.handlePlaceInput(chatId, subscriber, text)
                 break
             default:
-                // Onboarding complete, just acknowledge
-                await this.sendMessage(chatId, '🌿 Use /horoscope to get today\'s reading or /help for more options.')
+                // If text is sent but onboarding is done, show menu
+                await this.showMainMenu(chatId, subscriber.first_name || 'Friend')
         }
     }
 
@@ -518,12 +620,17 @@ class TelegramBotService {
         const subscriber = await this.getSubscriber(telegramId)
 
         if (!subscriber) {
-            await this.sendMessage(chatId, '🌿 Please send /start to begin your journey first.')
+            await this.handleStart(chatId, { id: telegramId, first_name: 'Friend' } as TelegramUser)
             return
         }
 
         if (!subscriber.onboarding_completed || !subscriber.zodiac_sign) {
-            await this.sendMessage(chatId, '🌿 Please complete your profile first. Send /start to continue.')
+            // Reset onboarding to ensure smooth flow
+            await this.updateSubscriber(telegramId, {
+                onboarding_step: 'awaiting_dob',
+                onboarding_completed: false,
+            })
+            await this.sendMessage(chatId, MESSAGES.askDob)
             return
         }
 
@@ -533,6 +640,9 @@ class TelegramBotService {
     async sendDailyHoroscope(telegramId: number): Promise<boolean> {
         const subscriber = await this.getSubscriber(telegramId)
         if (!subscriber || !subscriber.zodiac_sign) return false
+
+        // Notify user we are working
+        await this.sendMessage(telegramId, '🔮 Consulting the stars for you...')
 
         const horoscope = await this.getOrGenerateHoroscope(subscriber.zodiac_sign)
         if (!horoscope) {
@@ -551,7 +661,20 @@ class TelegramBotService {
             horoscope.health_prediction
         )
 
-        const success = await this.sendMessage(telegramId, message)
+        // Add interactive buttons to the horoscope result
+        const keyboard = {
+            inline_keyboard: [
+                [
+                    { text: '🌐 Get Full Reading', url: MESSAGES.introUrl }
+                ],
+                [
+                    { text: '💖 Dating Advice', callback_data: 'love_issue' },
+                    { text: '💰 Wealth', callback_data: 'money_issue' }
+                ]
+            ]
+        }
+
+        const success = await this.sendMessage(telegramId, message, 'Markdown', keyboard)
 
         if (success) {
             await this.logMessage(subscriber.id, telegramId, 'daily_horoscope', message)

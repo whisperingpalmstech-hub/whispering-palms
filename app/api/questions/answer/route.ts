@@ -173,6 +173,17 @@ export async function POST(request: NextRequest) {
       console.warn(`Workspace ID format might be invalid: ${workspace.workspace_id}, will use as-is`)
     }
 
+    // Get user's preferred language EARLY - needed for LLM response language
+    const { data: userData } = await supabase
+      .from('users')
+      .select('email, name, preferred_language')
+      .eq('id', user.id)
+      .single()
+
+    const userEmail = userData?.email || ''
+    const userName = userData?.name || undefined
+    const userPreferredLanguage = userData?.preferred_language || 'en'
+
     // Step 1: Fetch user context from database (direct injection, no RAG)
     const userContextData = await fetchUserContext(user.id)
 
@@ -261,13 +272,29 @@ Remember: Answer the question directly, concisely, and naturally - like a palmis
       // Inject user context directly into the message for better reliability
       // Some LLM modes don't properly use system prompts, so we prepend context to message
       const userQuestion = question.text_original || question.text_internal_en || ''
-      const questionLanguage = question.language_detected || 'en'
+      // Use the user's PREFERRED language setting (not the detected question language)
+      // This way, even if the user types in English but has Hindi selected, they get Hindi answers
+      const questionLanguage = userPreferredLanguage || question.language_detected || 'en'
       const targetLanguageName = questionLanguage === 'hi' ? 'Hindi' :
         questionLanguage === 'es' ? 'Spanish' :
           questionLanguage === 'fr' ? 'French' :
             questionLanguage === 'de' ? 'German' :
               questionLanguage === 'it' ? 'Italian' :
-                'the user\'s language'
+                questionLanguage === 'ar' ? 'Arabic' :
+                  questionLanguage === 'ru' ? 'Russian' :
+                    questionLanguage === 'zh' ? 'Chinese' :
+                      questionLanguage === 'ko' ? 'Korean' :
+                        questionLanguage === 'ja' ? 'Japanese' :
+                          questionLanguage === 'pt' ? 'Portuguese' :
+                            questionLanguage === 'bn' ? 'Bengali' :
+                              questionLanguage === 'ta' ? 'Tamil' :
+                                questionLanguage === 'te' ? 'Telugu' :
+                                  questionLanguage === 'mr' ? 'Marathi' :
+                                    questionLanguage === 'gu' ? 'Gujarati' :
+                                      questionLanguage === 'kn' ? 'Kannada' :
+                                        questionLanguage === 'ml' ? 'Malayalam' :
+                                          questionLanguage === 'pa' ? 'Punjabi' :
+                                            'the user\'s language'
 
       const messageWithContext = `USER CONTEXT INFORMATION:
 ${userContextText}
@@ -275,22 +302,16 @@ ${userContextText}
 ---
 USER QUESTION: ${userQuestion}
 
-INSTRUCTIONS:
-1. Answer the question based on the user's birth details and palmistry data.
-2. You MUST provide the answer in TWO formats if the user is not asking in English:
-   - First in ENGLISH (for our voice generator)
-   - Second in ${targetLanguageName.toUpperCase()} (for the user to read)
+IMPORTANT: Do NOT write any meta-commentary, preamble, or notes about language. Do NOT say things like "Since the user's preferred language is..." or "I will provide the answer in...". Just give the answer directly.
 
-3. Format your response strictly like this:
+Format your response strictly like this:
 [ENGLISH_START]
-(Write the English answer here. Keep it 4-6 sentences, conversational, no greetings)
+(Your answer in English. 4-6 sentences, conversational, no greetings, no preamble)
 [ENGLISH_END]
 
 [LOCAL_START]
-(Write the ${targetLanguageName} translation here. Keep it 4-6 sentences, conversational, no greetings)
+(Same answer translated to ${targetLanguageName}. If user asked in English, repeat the English answer here)
 [LOCAL_END]
-
-If the user asks in English or you cannot translate, just provide the English answer inside [ENGLISH_START]...[ENGLISH_END] and [LOCAL_START]...[LOCAL_END] (same content).
 `
 
       console.log(`📝 Sending message with context (${userContextText.length} chars of context)`)
@@ -304,26 +325,46 @@ If the user asks in English or you cannot translate, just provide the English an
 
       const rawResponse = response.response || ''
 
+      // Helper: strip any leftover tag markers and meta-commentary from extracted text
+      const stripTags = (text: string) => text
+        .replace(/\[ENGLISH_START\]/gi, '')
+        .replace(/\[ENGLISH_END\]/gi, '')
+        .replace(/\[LOCAL_START\]/gi, '')
+        .replace(/\[LOCAL_END\]/gi, '')
+        .replace(/is repeated here as.*?English\.?\s*/gi, '')
+        .replace(/Your answer remains the same as\s*/gi, '')
+        .replace(/since the user'?s?\s*(preferred\s+)?language\s+(is|was)\s+\w+[.,]?\s*/gi, '')
+        .replace(/the\s+(response|answer|reading)\s+(will be|is)\s+(provided|given|the same)\s+[^.]*\.?\s*/gi, '')
+        .trim()
+
       // Extract English and Local versions
       const englishMatch = rawResponse.match(/\[ENGLISH_START\]([\s\S]*?)\[ENGLISH_END\]/i)
       const localMatch = rawResponse.match(/\[LOCAL_START\]([\s\S]*?)\[LOCAL_END\]/i)
 
       if (englishMatch && englishMatch[1]) {
-        answerTextInternalEn = englishMatch[1].trim()
+        answerTextInternalEn = stripTags(englishMatch[1]).trim()
       } else {
-        // Fallback: If no tags, assume the whole text is the answer (might be mixed language)
-        // We'll try to use it for English voice if it looks like English, but safely just use it
-        answerTextInternalEn = rawResponse.trim()
+        // Fallback: If no tags, strip any tags from raw response
+        answerTextInternalEn = stripTags(rawResponse).trim()
       }
 
-      if (localMatch && localMatch[1]) {
-        answerTextTranslated = localMatch[1].trim()
+      if (questionLanguage === 'en') {
+        // For English users, always use the English answer directly
+        // The LOCAL section often contains junk when user asks in English
+        answerTextTranslated = answerTextInternalEn
+      } else if (localMatch && localMatch[1]) {
+        const localText = stripTags(localMatch[1]).trim()
+        // Check if LOCAL section is actually useful (not just meta-commentary)
+        if (localText.length > 20 && !localText.match(/^(is repeated|your answer remains|same as)/i)) {
+          answerTextTranslated = localText
+        } else {
+          answerTextTranslated = answerTextInternalEn
+        }
       } else {
-        // Fallback: If we have En but no Local, use En. If neither, use raw.
-        answerTextTranslated = answerTextInternalEn || rawResponse.trim()
+        answerTextTranslated = answerTextInternalEn || stripTags(rawResponse).trim()
       }
 
-      // If we only got one (e.g. model forgot Local), ensure we have something
+      // Ensure we always have something
       if (!answerTextTranslated) answerTextTranslated = answerTextInternalEn
 
       // Extract model info if available
@@ -367,6 +408,9 @@ If the user asks in English or you cannot translate, just provide the English an
     // Clean up answers (remove greetings etc from both versions)
     const cleanText = (text: string) => text
       .replace(/^(Dear\s+[^,\n]+|Hello\s+[^,\n]+|Hi\s+[^,\n]+|Greetings\s*[,\n])/i, '')
+      .replace(/^(Since|As)\s+(the\s+)?user'?s?\s+(preferred\s+)?language\s+(is|was)\s+[^.\n]+[.\n]\s*/i, '')
+      .replace(/^(I\s+will|Let\s+me|Here\s+is|The\s+answer\s+will\s+be)\s+(provide|give|present|deliver)[^.\n]*[.\n]\s*/i, '')
+      .replace(/^(The\s+response|The\s+reading|This)\s+(will\s+be|is)\s+(provided|given|presented)\s+(in\s+both|in\s+)[^.\n]*[.\n]\s*/i, '')
       .replace(/\n*(Best regards|Sincerely|Regards|Thank you|Thanks|Yours truly|Yours sincerely|Assistant Name|Aarav Dev|\[Assistant Name\]|\[Your Name\]).*$/i, '')
       .replace(/\n*---\s*\n*(Best regards|Sincerely|Regards|Thank you|Thanks).*$/i, '')
       .replace(/\n*^(Best regards|Sincerely|Regards|Thank you|Thanks|Assistant Name|\[Assistant Name\]).*$/im, '')
@@ -422,16 +466,7 @@ If the user asks in English or you cannot translate, just provide the English an
     // Keep question status as 'pending' until email is sent
     // Status will be updated to 'sent' when email is delivered via /api/email/send
 
-    // Get user email and preferred language
-    const { data: userData } = await supabase
-      .from('users')
-      .select('email, name, preferred_language')
-      .eq('id', user.id)
-      .single()
-
-    const userEmail = userData?.email || ''
-    const userName = userData?.name || undefined
-    const userPreferredLanguage = userData?.preferred_language || 'en'
+    // userData already fetched earlier for preferred language
 
     // Generate voice narration for Flame and SuperFlame plans.
     // Provider selection lives in lib/services/tts - synthesize() returns null
