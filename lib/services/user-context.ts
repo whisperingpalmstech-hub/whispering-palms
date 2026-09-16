@@ -6,6 +6,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { extractPalmFeatures } from './palm-extractor'
 import { interpretPalmistry, formatPalmistryForLLM, type PalmistryFeatures } from './palmistry-interpreter'
+import { analysePalmPhoto, formatAnalysisForLLM } from './palm-analysis'
 
 export interface UserContext {
   // Basic user information
@@ -178,22 +179,30 @@ export async function extractPalmistryData(
     try {
       console.log(`[Palmistry] Processing ${image.palmType}...`)
 
-      // Step 1: Extract geometric features from image
-      // This will throw PALM_DETECTION_FAILED if hand detection fails
-      const geometricFeatures = await extractPalmFeatures(image.signedUrl!, image.palmType)
-
-      // Step 2: Interpret geometric features as palmistry data
-      const palmistryFeatures = interpretPalmistry(geometricFeatures, image.palmType)
-
-      // Step 3: Format for LLM
-      const palmistryText = formatPalmistryForLLM(palmistryFeatures, image.palmType)
-
-      console.log(`[Palmistry] ✓ ${image.palmType} analyzed successfully`)
-      console.log(`[Palmistry] Confidence: ${palmistryFeatures.confidence}`)
-      console.log(`[Palmistry] Palm shape: ${palmistryFeatures.palmShape}`)
-      if (palmistryFeatures.majorLines.marriageLines) {
-        console.log(`[Palmistry] Marriage line: ${palmistryFeatures.majorLines.marriageLines.position} position`)
+      // PREFERRED: the vision model reads the actual photograph.
+      // This is image-dependent — different palms give different findings,
+      // and lines that are not visible are reported as absent.
+      const visual = await analysePalmPhoto(image.signedUrl!)
+      if (visual) {
+        if (!visual.palmDetected) {
+          console.error(`[Palmistry] ❌ No palm detected in ${image.palmType}`)
+          failedPalms.push(image.palmType)
+          continue
+        }
+        const palmistryText = formatAnalysisForLLM(visual, image.palmType)
+        console.log(`[Palmistry] ✓ ${image.palmType} analysed by vision model (confidence: ${visual.confidence})`)
+        successfulExtractions.push({ palmType: image.palmType, palmistryText })
+        continue
       }
+
+      // FALLBACK when no vision provider is configured. NOTE: this legacy
+      // path uses generateSimulatedLandmarks(), which returns the SAME 21
+      // points for every image, so its output is NOT image-dependent. It
+      // exists only so a missing API key degrades rather than crashes.
+      console.warn(`[Palmistry] ⚠️ No vision provider — using legacy geometric fallback for ${image.palmType} (NOT image-specific)`)
+      const geometricFeatures = await extractPalmFeatures(image.signedUrl!, image.palmType)
+      const palmistryFeatures = interpretPalmistry(geometricFeatures, image.palmType)
+      const palmistryText = formatPalmistryForLLM(palmistryFeatures, image.palmType)
 
       successfulExtractions.push({ palmType: image.palmType, palmistryText })
     } catch (error) {

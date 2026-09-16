@@ -89,9 +89,23 @@ export async function analysePalmPhoto(
   const endpoint = useDeepseek
     ? 'https://api.deepseek.com/chat/completions'
     : 'https://openrouter.ai/api/v1/chat/completions'
-  const model = useDeepseek
-    ? (process.env.PALM_VISION_MODEL || 'deepseek-flash')
-    : (process.env.PALM_VISION_MODEL || 'google/gemini-2.5-flash-image')
+
+  // PALM_VISION_MODEL is only honoured when it names a model the chosen
+  // provider actually serves. A stale OpenRouter id (e.g.
+  // "google/gemini-2.5-flash-image") left in the env used to be forwarded
+  // to DeepSeek, which 400s ("supported names are deepseek-flash,
+  // deepseek-v4-pro") — and the reading silently fell back to the
+  // non-image-specific geometric path.
+  const override = process.env.PALM_VISION_MODEL
+  const overrideFitsProvider = override
+    ? (useDeepseek ? /^deepseek-/.test(override) : override.includes('/'))
+    : false
+  const model = overrideFitsProvider
+    ? override!
+    : useDeepseek ? 'deepseek-flash' : 'google/gemini-2.5-flash-image'
+  if (override && !overrideFitsProvider) {
+    console.warn(`[PalmAnalysis] Ignoring PALM_VISION_MODEL="${override}" — not a ${useDeepseek ? 'DeepSeek' : 'OpenRouter'} model. Using ${model}.`)
+  }
 
   if (!apiKey) {
     console.warn('[PalmAnalysis] No vision provider key set — skipping photo analysis.')
@@ -122,7 +136,8 @@ export async function analysePalmPhoto(
     })
 
     if (!response.ok) {
-      console.error('[PalmAnalysis] Vision call failed:', response.status)
+      const detail = (await response.text().catch(() => '')).slice(0, 300)
+      console.error('[PalmAnalysis] Vision call failed:', response.status, detail)
       return null
     }
 

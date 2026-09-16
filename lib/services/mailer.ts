@@ -82,22 +82,37 @@ function resolveSmtpConfig(provider: EmailProvider) {
         pass: process.env.SMTP_PASSWORD,
         missingHint: 'Set SMTP_HOST, SMTP_USER and SMTP_PASSWORD.',
       }
-    case 'zoho':
+    case 'zoho': {
+      // ZOHO_MAIL_HOST matters: Zoho is region-partitioned and an EU
+      // mailbox will not authenticate against smtp.zoho.com. The config
+      // sets ZOHO_MAIL_HOST=smtp.zoho.eu, which was previously ignored
+      // here, so every send silently went to the wrong region.
+      //
+      // TLS mode MUST follow the port. This branch used to hard-code
+      // secure:true while still honouring SMTP_PORT, so a stray
+      // SMTP_PORT=587 (STARTTLS) was opened as implicit TLS and every send
+      // died with "SSL wrong version number" — a misleading symptom for a
+      // port/TLS mismatch. Now 465 => implicit TLS, anything else => STARTTLS,
+      // unless SMTP_SECURE overrides explicitly.
+      const zohoPort = parseInt(
+        (process.env.SMTP_PORT || process.env.ZOHO_MAIL_PORT || '465').trim(),
+        10
+      )
       return {
-        // ZOHO_MAIL_HOST matters: Zoho is region-partitioned and an EU
-        // mailbox will not authenticate against smtp.zoho.com. The config
-        // sets ZOHO_MAIL_HOST=smtp.zoho.eu, which was previously ignored
-        // here, so every send silently went to the wrong region.
-        host:
+        host: (
           process.env.SMTP_HOST ||
           process.env.ZOHO_MAIL_HOST ||
-          'smtp.zoho.com',
-        port: parseInt(process.env.SMTP_PORT || process.env.ZOHO_MAIL_PORT || '465', 10),
-        secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : true,
-        user: process.env.SMTP_USER || process.env.ZOHO_MAIL_USER,
+          'smtp.zoho.com'
+        ).trim(),
+        port: zohoPort,
+        secure: process.env.SMTP_SECURE
+          ? process.env.SMTP_SECURE.trim() === 'true'
+          : zohoPort === 465,
+        user: (process.env.SMTP_USER || process.env.ZOHO_MAIL_USER)?.trim(),
         pass: process.env.SMTP_PASSWORD || process.env.ZOHO_MAIL_PASSWORD,
         missingHint: 'Set ZOHO_MAIL_USER and ZOHO_MAIL_PASSWORD (and ZOHO_MAIL_HOST for non-.com regions).',
       }
+    }
     case 'gmail':
       return {
         host: 'smtp.gmail.com',
@@ -165,6 +180,7 @@ function getTransporter(provider: EmailProvider): Transporter {
     maxMessages: parseInt(process.env.SMTP_MAX_MESSAGES || '100', 10),
   })
   cachedTransporterKey = key
+  console.log(`[mailer] transport ${provider} -> ${config.host}:${config.port} secure=${config.secure} user=${config.user}`)
 
   return cachedTransporter
 }
